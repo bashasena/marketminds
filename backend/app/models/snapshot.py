@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Date, DateTime, Float, Integer, Text, UniqueConstraint
+from sqlalchemy import Date, DateTime, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -17,10 +17,11 @@ class DailySnapshot(Base):
     """One row per calendar day: full JSON payload + headline fields for queries."""
 
     __tablename__ = "daily_snapshots"
-    __table_args__ = (UniqueConstraint("snapshot_date", name="uq_daily_snapshots_date"),)
+    __table_args__ = (UniqueConstraint("snapshot_date", "market_id", name="uq_daily_snapshots_date_market"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     snapshot_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    market_id: Mapped[str] = mapped_column(String(32), nullable=False, default="in_nifty", index=True)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     composite_sentiment: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     nifty_close: Mapped[Optional[float]] = mapped_column(Float, nullable=True)

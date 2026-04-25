@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     yfin_gold_futures: str = "GC=F"
     yfin_usd_inr: str = "INR=X"
     yfin_crude_symbol: str = "CL=F"
+    # US market global strip (all USD / dollar-denominated; no INR or India proxies)
+    yfin_us_dow_symbol: str = "^DJI"
+    yfin_dollar_index_symbol: str = "DX-Y.NYB"
 
     # X (Twitter) API v2 — env aliases match common hosting conventions
     x_bearer_token: Optional[str] = Field(default=None, validation_alias=AliasChoices("XBEARER_TOKEN", "x_bearer_token"))

@@ -56,7 +56,8 @@ def fetch_index_daily_rows(index_name: str, day_span: int = 35) -> list[dict[str
     start_s = start.strftime("%d-%b-%Y")
     end_s = end.strftime("%d-%b-%Y")
     try:
-        with httpx.Client(timeout=45.0, follow_redirects=True) as client:
+        # Tighter than before so a hung upstream does not keep /snapshot over nginx's old 60s budget alone.
+        with httpx.Client(timeout=22.0, follow_redirects=True) as client:
             r = client.post(_HIST_URL, headers=_HEADERS, json=_cinfo_payload(index_name, start_s, end_s))
             r.raise_for_status()
             payload = r.json()
