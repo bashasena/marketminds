@@ -1,0 +1,45 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: snapshot
+      POSTGRES_PASSWORD: snapshot
+      POSTGRES_DB: market_snapshot
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U snapshot -d market_snapshot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql://snapshot:snapshot@db:5432/market_snapshot
+      XBEARER_TOKEN: ${XBEARER_TOKEN:-}
+      X_LIST_ID: ${X_LIST_ID:-}
+      SNAPSHOT_CRON_HOUR: ${SNAPSHOT_CRON_HOUR:-16}
+      SNAPSHOT_CRON_MINUTE: ${SNAPSHOT_CRON_MINUTE:-0}
+      INTRADAY_REFRESH_MINUTES: ${INTRADAY_REFRESH_MINUTES:-0}
+      API_CORS_ORIGINS: http://localhost:5173,http://localhost:8080
+      DISABLE_FINBERT: 1
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  web:
+    build:
+      context: ./frontend
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+
+volumes:
+  pgdata:
