@@ -51,6 +51,35 @@ _HEADLINE_TIMEOUT = 18.0
 # Yahoo often returns empty ^GSPC from Docker; ETFs usually work as the same spot proxy.
 _HEADLINE_SYMBOLS = ("^GSPC", "SPY", "IVV", "VOO")
 
+# NASDAQ Composite + liquid proxies; separate sample (tech-heavy) for breadth.
+_NASDAQ_HEADLINE_SYMBOLS = ("^IXIC", "QQQ", "QQQM")
+_NASDAQ_SAMPLE = [
+    "AAPL",
+    "MSFT",
+    "GOOGL",
+    "AMZN",
+    "NVDA",
+    "META",
+    "TSLA",
+    "AVGO",
+    "COST",
+    "NFLX",
+    "AMD",
+    "ADBE",
+    "PYPL",
+    "CSCO",
+    "INTC",
+    "QCOM",
+    "AMAT",
+    "MU",
+    "LRCX",
+    "ISRG",
+    "GILD",
+    "MRVL",
+    "ADI",
+    "SNPS",
+]
+
 
 def _hist_last_row(symbol: str):
     """Return (open, high, low, close, pct, as_of_date) or None."""
@@ -78,7 +107,9 @@ def _hist_last_row(symbol: str):
     return None
 
 
-def _gspc_headline() -> tuple[
+def _us_headline_chain(
+    symbols: tuple[str, ...],
+) -> tuple[
     float | None,
     float | None,
     float | None,
@@ -89,10 +120,10 @@ def _gspc_headline() -> tuple[
     str,
 ]:
     """
-    Yahoo v8 chart (daily bars, else meta regularMarket*), then yfinance.
+    Yahoo v8 chart, then yfinance, for a tuple of tickers in order.
     ohlc_source: yahoo_bars | yahoo_meta | yfinance | "".
     """
-    for sym in _HEADLINE_SYMBOLS:
+    for sym in symbols:
         ch = chart_headline_combined(sym)
         if ch is not None:
             o, h, l, last, pct, as_of, used, mode = ch
@@ -131,12 +162,18 @@ def _one_pct_change(sym: str) -> tuple[str, float | None]:
     return sym, None
 
 
-def fetch_sp500_style_snapshot(top_n: int = 5) -> IndexSnapshot:
-    g_open, g_high, g_low, g_last, g_pct, as_of, head_sym, ohlc_src = _gspc_headline()
+def _order_book_style_snapshot(
+    top_n: int,
+    headline_symbols: tuple[str, ...],
+    sample: list[str],
+    display_name: str,
+    primary_symbol: str,
+    breadth_key: str,
+) -> IndexSnapshot:
+    g_open, g_high, g_low, g_last, g_pct, as_of, head_sym, ohlc_src = _us_headline_chain(headline_symbols)
     moves: list[ConstituentMove] = []
-    # Low concurrency: Yahoo returns 429 if many chart requests run at once.
     with ThreadPoolExecutor(max_workers=2) as ex:
-        futs = [ex.submit(_one_pct_change, s) for s in _US_SAMPLE]
+        futs = [ex.submit(_one_pct_change, s) for s in sample]
         for f in futs:
             try:
                 sym, p = f.result(timeout=_YF_SEC + 2)
@@ -145,9 +182,9 @@ def fetch_sp500_style_snapshot(top_n: int = 5) -> IndexSnapshot:
             if p is not None:
                 moves.append(ConstituentMove(symbol=sym, pct_change=p, last_price=None))
 
-    idx_name = "S&P 500"
-    if head_sym and head_sym != "^GSPC":
-        idx_name = f"S&P 500 (via {head_sym})"
+    idx_name = display_name
+    if head_sym and head_sym != primary_symbol:
+        idx_name = f"{display_name} (via {head_sym})"
 
     advances = declines = unchanged = 0
     for m in moves:
@@ -181,8 +218,30 @@ def fetch_sp500_style_snapshot(top_n: int = 5) -> IndexSnapshot:
         top_losers=losers,
         raw_index_meta={
             "source": src,
-            "headline": head_sym or "^GSPC",
-            "breadth": "us_mega_cap_sample",
+            "headline": head_sym or primary_symbol,
+            "breadth": breadth_key,
             "n": str(len(moves)),
         },
+    )
+
+
+def fetch_sp500_style_snapshot(top_n: int = 5) -> IndexSnapshot:
+    return _order_book_style_snapshot(
+        top_n,
+        _HEADLINE_SYMBOLS,
+        _US_SAMPLE,
+        "S&P 500",
+        "^GSPC",
+        "us_mega_cap_sample",
+    )
+
+
+def fetch_nasdaq_style_snapshot(top_n: int = 5) -> IndexSnapshot:
+    return _order_book_style_snapshot(
+        top_n,
+        _NASDAQ_HEADLINE_SYMBOLS,
+        _NASDAQ_SAMPLE,
+        "NASDAQ Composite",
+        "^IXIC",
+        "us_nasdaq_tech_sample",
     )

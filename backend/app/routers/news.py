@@ -13,7 +13,7 @@ router = APIRouter(prefix="/news", tags=["news"])
 
 @router.get("")
 def market_news(
-    market: str = Query("in_nifty", description="Market id: in_nifty | us_broad"),
+    market: str = Query("in_nifty", description="in_nifty | us_broad | usa_nasdaq"),
     limit: int = Query(12, ge=1, le=30),
 ) -> dict[str, Any]:
     if market not in NEWS_RSS_BY_MARKET:

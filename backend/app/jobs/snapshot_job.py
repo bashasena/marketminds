@@ -11,6 +11,7 @@ from app.db import SessionLocal
 from app.repositories.snapshot_repo import upsert_daily_snapshot, upsert_fii_dii_flow
 from app.services.market_snapshot import build_snapshot
 from app.services.us_market_snapshot import build_us_snapshot
+from app.services.us_nasdaq_market_snapshot import build_us_nasdaq_snapshot
 
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
@@ -20,6 +21,8 @@ def run_snapshot_pipeline(persist: bool = True, market: str = "in_nifty") -> dic
     settings = get_settings()
     if market == "us_broad":
         payload = build_us_snapshot(settings)
+    elif market == "usa_nasdaq":
+        payload = build_us_nasdaq_snapshot(settings)
     else:
         payload = build_snapshot(settings)
     snap_date = date.fromisoformat(str(payload["snapshot_date"]))

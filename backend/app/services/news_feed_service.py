@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 NEWS_RSS_BY_MARKET: dict[str, str] = {
     "in_nifty": "https://news.google.com/rss/search?q=NIFTY+India+stock+market&hl=en-IN&gl=IN&ceid=IN:en",
     "us_broad": "https://news.google.com/rss/search?q=US+stock+market+S%26P+500&hl=en-US&gl=US&ceid=US:en",
+    "usa_nasdaq": "https://news.google.com/rss/search?q=NASDAQ+US+stocks+tech&hl=en-US&gl=US&ceid=US:en",
 }
 
 _HEADERS = {
