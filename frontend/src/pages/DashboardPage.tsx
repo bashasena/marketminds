@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { NewsSection } from "../components/NewsSection";
+import { Card } from "../components/ui/Card";
+import { useMarket } from "../market/MarketContext";
+import { MARKETS } from "../market/types";
 import type { Snapshot } from "../types";
 import { persistSnapshot, readStoredSnapshot } from "../snapshotStorage";
 
@@ -19,85 +23,97 @@ function pctChip(pct: number | null | undefined) {
   );
 }
 
-function Card({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-2xl border border-slate-800 bg-gradient-to-b from-slate-900/70 to-slate-950/40 p-5 shadow-lg shadow-black/30">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold tracking-wide text-slate-200">{title}</h2>
-          {subtitle ? <p className="mt-1 text-xs text-slate-500">{subtitle}</p> : null}
-        </div>
-      </div>
-      {children}
-    </section>
-  );
-}
-
 function StickyTopBar() {
+  const { market, setMarket } = useMarket();
   return (
     <div className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95 px-4 py-3 shadow-md shadow-black/20 backdrop-blur">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
         <p className="min-w-0 text-xs font-medium uppercase tracking-widest text-slate-400">Daily market snapshot</p>
-        <Link
-          to="/admin"
-          className="shrink-0 rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
-        >
-          Admin
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="sr-only" htmlFor="market-select">
+            Market
+          </label>
+          <select
+            id="market-select"
+            value={market}
+            onChange={(e) => setMarket(e.target.value as typeof market)}
+            className="max-w-[min(100%,220px)] rounded-lg border border-slate-600 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          >
+            {MARKETS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+          <Link
+            to="/admin"
+            className="shrink-0 rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
+          >
+            Admin
+          </Link>
+        </div>
       </div>
     </div>
   );
 }
 
 export function DashboardPage() {
-  const [data, setData] = useState<Snapshot | null>(() => readStoredSnapshot());
+  const { market } = useMarket();
+  const [data, setData] = useState<Snapshot | null>(() => readStoredSnapshot(market));
   const [err, setErr] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [needsAdminRefresh, setNeedsAdminRefresh] = useState(false);
 
   useEffect(() => {
+    setData(readStoredSnapshot(market));
+    setErr(null);
+    setNeedsAdminRefresh(false);
+    setReady(false);
     (async () => {
-      setErr(null);
-      setNeedsAdminRefresh(false);
       try {
-        const r = await fetch("/snapshot/today");
+        // live=true: recompute from Yahoo (etc.); omit persist so we do not write DB on every view — Admin "Refresh" saves.
+        const r = await fetch(
+          `/snapshot/today?market=${encodeURIComponent(market)}&live=true`,
+          { cache: "no-store" },
+        );
         if (r.status === 404) {
-          if (!readStoredSnapshot()) {
+          if (!readStoredSnapshot(market)) {
             setNeedsAdminRefresh(true);
           }
           return;
         }
         if (!r.ok) {
           const msg = `${r.status} ${r.statusText}`;
-          if (!readStoredSnapshot()) {
+          if (!readStoredSnapshot(market)) {
             setErr(msg);
           }
           return;
         }
         const j = (await r.json()) as Snapshot;
         setData(j);
-        persistSnapshot(j);
+        persistSnapshot(j, market);
       } catch (e) {
-        if (!readStoredSnapshot()) {
+        if (!readStoredSnapshot(market)) {
           setErr(e instanceof Error ? e.message : "Failed to load snapshot");
         }
       } finally {
         setReady(true);
       }
     })();
-  }, []);
+  }, [market]);
 
   if (data) {
     const comp = data.composite;
     const score = comp.score_0_100;
+    const ui = data.meta?.ui;
+    const indexTitle = ui?.index_title ?? "Nifty 50";
+    const indexSub = ui?.index_subtitle ?? "Cash index";
+    const breadthSub = ui?.breadth_subtitle ?? "Nifty 50 constituents";
+    const moversSub = ui?.movers_subtitle ?? "Nifty 50";
+    const vixLine = ui?.vix_line ?? "India VIX";
+    const fiiCardTitle = ui?.fii_title ?? "FII / DII (cash)";
+    const showFii = ui?.show_fii_card !== false;
+    const globalSub = ui?.global_subtitle ?? "Overnight / cross-asset cues";
     const meterColor =
       score >= 62 ? "from-emerald-500/30 to-emerald-400/10" : score <= 42 ? "from-rose-500/30 to-rose-400/10" : "from-amber-500/25 to-amber-400/10";
 
@@ -124,7 +140,7 @@ export function DashboardPage() {
           </header>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <Card title="Nifty 50" subtitle="Cash index">
+            <Card title={indexTitle} subtitle={indexSub}>
               <div className="flex items-end justify-between gap-3">
                 <div>
                   <p className="text-4xl font-semibold tracking-tight text-white">{fmtNum(data.index.close, 2)}</p>
@@ -165,7 +181,7 @@ export function DashboardPage() {
               </div>
             </Card>
 
-            <Card title="Market breadth" subtitle="Nifty 50 constituents">
+            <Card title="Market breadth" subtitle={breadthSub}>
               <div className="grid grid-cols-3 gap-3 text-center">
                 <div className="rounded-xl bg-emerald-950/30 p-3">
                   <p className="text-xs text-emerald-200/70">Advances</p>
@@ -181,7 +197,9 @@ export function DashboardPage() {
                 </div>
               </div>
               <p className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                <span>India VIX: {fmtNum(data.vix.level, 2)}</span>
+                <span>
+                  {vixLine}: {fmtNum(data.vix.level, 2)}
+                </span>
                 {data.vix.pct_change !== null ? <span className="text-slate-300">({pctChip(data.vix.pct_change)} day)</span> : null}
               </p>
             </Card>
@@ -208,19 +226,21 @@ export function DashboardPage() {
               <p className="mt-3 text-sm text-slate-300">{data.technical.note}</p>
             </Card>
 
-            <Card title="FII / DII (cash)" subtitle={data.fii_dii.as_of ? `As of ${data.fii_dii.as_of}` : "Latest available"}>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-                  <p className="text-xs text-slate-500">FII net (₹ cr)</p>
-                  <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.fii_dii.fii_net_crores, 0)}</p>
+            {showFii ? (
+              <Card title={fiiCardTitle} subtitle={data.fii_dii.as_of ? `As of ${data.fii_dii.as_of}` : "Latest available"}>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                    <p className="text-xs text-slate-500">FII net (₹ cr)</p>
+                    <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.fii_dii.fii_net_crores, 0)}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                    <p className="text-xs text-slate-500">DII net (₹ cr)</p>
+                    <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.fii_dii.dii_net_crores, 0)}</p>
+                  </div>
                 </div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-                  <p className="text-xs text-slate-500">DII net (₹ cr)</p>
-                  <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.fii_dii.dii_net_crores, 0)}</p>
-                </div>
-              </div>
-              <p className="mt-3 text-sm text-slate-300">{data.fii_dii.note}</p>
-            </Card>
+                <p className="mt-3 text-sm text-slate-300">{data.fii_dii.note}</p>
+              </Card>
+            ) : null}
 
             <Card title="Options positioning" subtitle={`${data.options.symbol}${data.options.expiry ? ` · ${data.options.expiry}` : ""}`}>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -240,12 +260,15 @@ export function DashboardPage() {
               <p className="mt-3 text-sm text-slate-300">{data.options.note}</p>
             </Card>
 
-            <Card title="Global & commodities" subtitle="Overnight / cross-asset cues">
+            <Card title="Global & commodities" subtitle={globalSub}>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                 {Object.values(data.global).map((g) => (
                   <div key={g.label} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/30 px-3 py-2 text-sm">
                     <div>
-                      <div className="text-xs text-slate-500">{g.label}</div>
+                      <div className="text-xs text-slate-500">
+                        {g.label}
+                        {g.currency ? <span className="ml-1 text-slate-600">({g.currency})</span> : null}
+                      </div>
                       <div className="font-medium text-slate-100">{fmtNum(g.last, 2)}</div>
                     </div>
                     <div className="text-right text-xs">{pctChip(g.pct_change)}</div>
@@ -257,7 +280,7 @@ export function DashboardPage() {
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Card title="Top gainers" subtitle="Nifty 50">
+            <Card title="Top gainers" subtitle={moversSub}>
               <ul className="divide-y divide-slate-800">
                 {data.top_movers.gainers.map((g) => (
                   <li key={g.symbol} className="flex items-center justify-between py-2 text-sm">
@@ -267,7 +290,7 @@ export function DashboardPage() {
                 ))}
               </ul>
             </Card>
-            <Card title="Top losers" subtitle="Nifty 50">
+            <Card title="Top losers" subtitle={moversSub}>
               <ul className="divide-y divide-slate-800">
                 {data.top_movers.losers.map((g) => (
                   <li key={g.symbol} className="flex items-center justify-between py-2 text-sm">
@@ -293,6 +316,10 @@ export function DashboardPage() {
               <p className="mt-2 text-xs text-amber-200/80">{data.x_sentiment_summary.error}</p>
             ) : null}
           </Card>
+
+          <div className="mt-6">
+            <NewsSection market={market} />
+          </div>
         </div>
       </div>
     );
@@ -302,7 +329,9 @@ export function DashboardPage() {
     return (
       <div className="min-h-screen bg-slate-950">
         <StickyTopBar />
-        <div className="mx-auto max-w-6xl px-4 py-10" />
+        <div className="mx-auto max-w-6xl px-4 py-6 pb-10">
+          <NewsSection market={market} />
+        </div>
       </div>
     );
   }
@@ -311,7 +340,10 @@ export function DashboardPage() {
     return (
       <div className="min-h-screen bg-slate-950">
         <StickyTopBar />
-        <div className="mx-auto max-w-6xl px-4 py-10 pb-16">
+        <div className="mx-auto max-w-6xl px-4 py-6 pb-16">
+          <div className="mb-6">
+            <NewsSection market={market} />
+          </div>
           <h1 className="text-2xl font-semibold text-white">Could not load</h1>
           <div className="mt-6 rounded-2xl border border-rose-900/50 bg-rose-950/30 p-6 text-rose-200">
             <p className="font-semibold">Snapshot unavailable</p>
@@ -332,15 +364,22 @@ export function DashboardPage() {
     return (
       <div className="min-h-screen bg-slate-950">
         <StickyTopBar />
-        <div className="mx-auto max-w-6xl px-4 py-16 pb-16 text-center">
-          <p className="text-lg text-slate-200">You need to refresh data.</p>
-          <p className="mt-2 text-sm text-slate-500">Nothing is stored in the database for this app yet, and there is no saved view in the browser.</p>
-          <Link
-            to="/admin"
-            className="mt-6 inline-block rounded-lg border border-amber-600/50 bg-amber-950/40 px-4 py-2 text-sm font-medium text-amber-100 hover:bg-amber-900/50"
-          >
-            Open Admin to refresh
-          </Link>
+        <div className="mx-auto max-w-6xl px-4 py-6 pb-16">
+          <div className="mb-8">
+            <NewsSection market={market} />
+          </div>
+          <p className="text-center text-lg text-slate-200">You need to refresh data.</p>
+          <p className="mt-2 text-center text-sm text-slate-500">
+            Nothing is stored in the database for this app yet, and there is no saved view in the browser.
+          </p>
+          <div className="mt-6 text-center">
+            <Link
+              to="/admin"
+              className="inline-block rounded-lg border border-amber-600/50 bg-amber-950/40 px-4 py-2 text-sm font-medium text-amber-100 hover:bg-amber-900/50"
+            >
+              Open Admin to refresh
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -349,11 +388,14 @@ export function DashboardPage() {
   return (
     <div className="min-h-screen bg-slate-950">
       <StickyTopBar />
-      <div className="mx-auto max-w-6xl px-4 py-10 text-center text-sm text-slate-500">
-        <p>Something went wrong.</p>
-        <Link to="/admin" className="mt-2 inline-block text-amber-200/90 underline">
-          Open Admin
-        </Link>
+      <div className="mx-auto max-w-6xl px-4 py-6">
+        <NewsSection market={market} />
+        <p className="mt-6 text-center text-sm text-slate-500">Something went wrong.</p>
+        <p className="mt-2 text-center">
+          <Link to="/admin" className="text-amber-200/90 underline">
+            Open Admin
+          </Link>
+        </p>
       </div>
     </div>
   );

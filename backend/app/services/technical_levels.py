@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import yfinance as yf
 
 from app.services.nifty_indices_history import fetch_prior_session_ohlc_for_pivot
+from app.services.yahoo_chart_bars import chart_prior_session_ohlc
 
 _YF_PIVOT_SEC = 16.0
 
@@ -74,11 +75,23 @@ def build_pivot_from_yfinance(symbol: str) -> PivotLevels | None:
     return compute_pivot_levels(o, h, l, c)
 
 
+def build_pivot_from_yahoo_chart_api(symbol: str) -> PivotLevels | None:
+    """Yahoo v8 JSON daily bars; used when yfinance history is empty."""
+    ohlc = chart_prior_session_ohlc(symbol)
+    if ohlc is None:
+        return None
+    o, h, l, c = ohlc
+    return compute_pivot_levels(o, h, l, c)
+
+
 def build_pivot_from_yfinance_or_niftyindices(
     yfinance_symbol: str,
     niftyindices_index_name: str = "NIFTY 50",
 ) -> PivotLevels | None:
     """Prefer Yahoo daily bars; if empty (common in Docker), use niftyindices.com EOD OHLC."""
+    pl0 = build_pivot_from_yahoo_chart_api(yfinance_symbol)
+    if pl0 is not None:
+        return pl0
     pl = build_pivot_from_yfinance(yfinance_symbol)
     if pl is not None:
         return pl

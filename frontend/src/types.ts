@@ -63,5 +63,18 @@ export type Snapshot = {
     model: string;
     error: string | null;
   };
-  meta?: { data_warnings?: string[] };
+  meta?: {
+    data_warnings?: string[];
+    market_id?: string;
+    ui?: {
+      index_title?: string;
+      index_subtitle?: string;
+      breadth_subtitle?: string;
+      movers_subtitle?: string;
+      vix_line?: string;
+      fii_title?: string;
+      show_fii_card?: boolean;
+      global_subtitle?: string;
+    };
+  };
 };

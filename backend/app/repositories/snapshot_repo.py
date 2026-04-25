@@ -10,13 +10,29 @@ from sqlalchemy.orm import Session
 
 from app.models.snapshot import DailySnapshot, FiiDiiFlow
 
-
-def get_snapshot_for_date(db: Session, d: date) -> DailySnapshot | None:
-    return db.execute(select(DailySnapshot).where(DailySnapshot.snapshot_date == d)).scalar_one_or_none()
+DEFAULT_MARKET = "in_nifty"
 
 
-def get_latest_snapshot(db: Session) -> DailySnapshot | None:
-    q = select(DailySnapshot).order_by(DailySnapshot.snapshot_date.desc()).limit(1)
+def get_snapshot_for_date(db: Session, d: date, market_id: str = DEFAULT_MARKET) -> DailySnapshot | None:
+    return (
+        db.execute(
+            select(DailySnapshot).where(
+                DailySnapshot.snapshot_date == d,
+                DailySnapshot.market_id == market_id,
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
+def get_latest_snapshot(db: Session, market_id: str = DEFAULT_MARKET) -> DailySnapshot | None:
+    q = (
+        select(DailySnapshot)
+        .where(DailySnapshot.market_id == market_id)
+        .order_by(DailySnapshot.snapshot_date.desc())
+        .limit(1)
+    )
     return db.execute(q).scalars().first()
 
 
@@ -32,11 +48,13 @@ def upsert_daily_snapshot(
     composite: float | None,
     nifty_close: float | None,
     nifty_pct: float | None,
+    market_id: str = DEFAULT_MARKET,
 ) -> DailySnapshot:
-    row = get_snapshot_for_date(db, snapshot_date)
+    row = get_snapshot_for_date(db, snapshot_date, market_id)
     if row is None:
         row = DailySnapshot(
             snapshot_date=snapshot_date,
+            market_id=market_id,
             payload=payload,
             composite_sentiment=composite,
             nifty_close=nifty_close,

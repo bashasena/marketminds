@@ -9,6 +9,7 @@ export default defineConfig({
       "/snapshot": { target: "http://localhost:8000", changeOrigin: true },
       "/sentiment": { target: "http://localhost:8000", changeOrigin: true },
       "/health": { target: "http://localhost:8000", changeOrigin: true },
+      "/news": { target: "http://localhost:8000", changeOrigin: true },
     },
   },
 });

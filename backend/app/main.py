@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.jobs.snapshot_job import ist_now, run_snapshot_pipeline
+from app.routers.news import router as news_router
 from app.routers.sentiment import router as sentiment_router
 from app.routers.snapshot import router as snapshot_router
 
@@ -66,6 +67,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(snapshot_router)
     app.include_router(sentiment_router)
+    app.include_router(news_router)
 
     @app.get("/")
     def root():
@@ -78,6 +80,7 @@ def create_app() -> FastAPI:
             "snapshot_today": "/snapshot/today",
             "snapshot_history": "/snapshot/history?days=30",
             "sentiment_x": "/sentiment/x",
+            "news": "/news?market=in_nifty",
             "refresh": "POST /snapshot/refresh",
             "dashboard": "With Docker Compose UI: http://localhost:8080/",
         }

@@ -27,6 +27,8 @@ services:
       INTRADAY_REFRESH_MINUTES: ${INTRADAY_REFRESH_MINUTES:-0}
       API_CORS_ORIGINS: http://localhost:5173,http://localhost:8080
       DISABLE_FINBERT: 1
+      # Slow down Yahoo v8 chart calls if you see 429 (rate limit); default 0.25s between requests
+      YAHOO_CHART_MIN_INTERVAL: ${YAHOO_CHART_MIN_INTERVAL:-0.25}
     depends_on:
       db:
         condition: service_healthy

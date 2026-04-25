@@ -7,9 +7,10 @@ from dataclasses import dataclass
 
 import yfinance as yf
 
-_YF_VIX_SEC = 14.0
-
 from app.services.nifty_indices_history import fetch_index_daily_rows
+from app.services.yahoo_chart_bars import chart_vix_reading
+
+_YF_VIX_SEC = 14.0
 
 
 @dataclass
@@ -42,7 +43,13 @@ def _vix_yfinance_hist(symbol: str):
     return t.history(period="5d", interval="1d")
 
 
-def fetch_india_vix(symbol: str = "^INDIAVIX") -> VixReading:
+def fetch_vix_reading(symbol: str) -> VixReading:
+    """Yahoo Finance or chart API (same v8 data as a browser) — no India-specific fallback."""
+    cr = chart_vix_reading(symbol)
+    if cr is not None:
+        last, prev, pct = cr
+        if last is not None:
+            return VixReading(last=last, prev_close=prev, pct_change=pct)
     hist = None
     with ThreadPoolExecutor(max_workers=1) as ex:
         fut = ex.submit(_vix_yfinance_hist, symbol)
@@ -59,6 +66,13 @@ def fetch_india_vix(symbol: str = "^INDIAVIX") -> VixReading:
             prev = None
             pct = None
         return VixReading(last=last, prev_close=prev, pct_change=pct)
+    return VixReading(last=None, prev_close=None, pct_change=None)
+
+
+def fetch_india_vix(symbol: str = "^INDIAVIX") -> VixReading:
+    y = fetch_vix_reading(symbol)
+    if y.last is not None:
+        return y
     alt = _vix_from_niftyindices()
     if alt is not None:
         return alt

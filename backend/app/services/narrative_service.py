@@ -25,14 +25,20 @@ def dashboard_title(composite: CompositeResult, nifty_pct: float | None) -> str:
     return "Balanced Risk-On / Risk-Off"
 
 
-def index_narrative(pct: float | None, high: float | None, low: float | None, close: float | None) -> str:
+def index_narrative(
+    pct: float | None,
+    high: float | None,
+    low: float | None,
+    close: float | None,
+    index_name: str = "Nifty",
+) -> str:
     if pct is None or close is None:
         return "Index data unavailable for narrative."
     direction = "higher" if pct > 0 else "lower" if pct < 0 else "flat"
     rng = ""
     if high and low:
         rng = f" Day range {low:,.0f}–{high:,.0f}."
-    return f"Nifty finished {direction} by {abs(pct):.2f}% at {close:,.2f}.{rng}"
+    return f"{index_name} finished {direction} by {abs(pct):.2f}% at {close:,.2f}.{rng}"
 
 
 def pivot_note(close: float | None, pivot: float | None) -> str:
