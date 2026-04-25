@@ -1,5 +1,5 @@
 /** Extend as you add pipelines (e.g. us_spy) and wire snapshot builders per id. */
-export type MarketId = "in_nifty" | "us_broad";
+export type MarketId = "in_nifty" | "us_broad" | "usa_nasdaq";
 
 export type MarketOption = {
   id: MarketId;
@@ -11,7 +11,8 @@ export type MarketOption = {
 
 export const MARKETS: MarketOption[] = [
   { id: "in_nifty", label: "India — Nifty 50", shortLabel: "India", snapshotReady: true },
-  { id: "us_broad", label: "USA — S&P 500 (broad)", shortLabel: "USA", snapshotReady: true },
+  { id: "us_broad", label: "USA — S&P 500 (broad)", shortLabel: "USA S&P", snapshotReady: true },
+  { id: "usa_nasdaq", label: "USA — NASDAQ", shortLabel: "NASDAQ", snapshotReady: true },
 ];
 
 export const DEFAULT_MARKET: MarketId = "in_nifty";

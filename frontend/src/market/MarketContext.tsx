@@ -4,7 +4,7 @@ import { DEFAULT_MARKET, MARKET_STORAGE_KEY, type MarketId } from "./types";
 function readStoredMarket(): MarketId {
   try {
     const raw = localStorage.getItem(MARKET_STORAGE_KEY);
-    if (raw === "in_nifty" || raw === "us_broad") return raw;
+    if (raw === "in_nifty" || raw === "us_broad" || raw === "usa_nasdaq") return raw;
   } catch {
     /* ignore */
   }

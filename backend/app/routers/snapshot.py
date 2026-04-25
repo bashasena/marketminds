@@ -21,15 +21,16 @@ from app.repositories.snapshot_repo import (
 )
 from app.services.market_snapshot import build_snapshot
 from app.services.us_market_snapshot import build_us_snapshot
+from app.services.us_nasdaq_market_snapshot import build_us_nasdaq_snapshot
 
 router = APIRouter(prefix="/snapshot", tags=["snapshot"])
 IST = ZoneInfo("Asia/Kolkata")
-VALID_MARKETS = frozenset({"in_nifty", "us_broad"})
+VALID_MARKETS = frozenset({"in_nifty", "us_broad", "usa_nasdaq"})
 
 
 @router.get("/today")
 def snapshot_today(
-    market: str = Query("in_nifty", description="in_nifty (India) | us_broad (USA)"),
+    market: str = Query("in_nifty", description="in_nifty | us_broad (S&P) | usa_nasdaq (NASDAQ)"),
     live: bool = Query(False, description="Force recompute from upstream sources"),
     persist: bool = Query(False, description="When true, save freshly built snapshot to DB"),
     db: Session = Depends(get_db),
@@ -47,8 +48,10 @@ def snapshot_today(
         raise HTTPException(status_code=404, detail="no_stored_snapshot")
     if market == "in_nifty":
         payload = build_snapshot(get_settings())
-    else:
+    elif market == "us_broad":
         payload = build_us_snapshot(get_settings())
+    else:
+        payload = build_us_nasdaq_snapshot(get_settings())
     if persist:
         snap_date = date.fromisoformat(str(payload["snapshot_date"]))
         comp = payload.get("composite", {}).get("score_0_100")
@@ -95,7 +98,7 @@ def snapshot_history(days: int = Query(30, ge=1, le=365), db: Session = Depends(
 
 @router.post("/refresh")
 def snapshot_refresh(
-    market: str = Query("in_nifty", description="in_nifty | us_broad"),
+    market: str = Query("in_nifty", description="in_nifty | us_broad | usa_nasdaq"),
 ) -> dict[str, Any]:
     """Manual / hook trigger: rebuild and persist."""
     if market not in VALID_MARKETS:
