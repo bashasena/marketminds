@@ -15,6 +15,11 @@ def get_snapshot_for_date(db: Session, d: date) -> DailySnapshot | None:
     return db.execute(select(DailySnapshot).where(DailySnapshot.snapshot_date == d)).scalar_one_or_none()
 
 
+def get_latest_snapshot(db: Session) -> DailySnapshot | None:
+    q = select(DailySnapshot).order_by(DailySnapshot.snapshot_date.desc()).limit(1)
+    return db.execute(q).scalars().first()
+
+
 def list_recent_snapshots(db: Session, days: int) -> list[DailySnapshot]:
     q = select(DailySnapshot).order_by(DailySnapshot.snapshot_date.desc()).limit(max(1, days))
     return list(db.execute(q).scalars().all())

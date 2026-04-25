@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass
 
 import yfinance as yf
 
 from app.services.nifty_indices_history import fetch_prior_session_ohlc_for_pivot
+
+_YF_PIVOT_SEC = 16.0
 
 
 @dataclass
@@ -42,15 +45,25 @@ def compute_pivot_levels(prev_o: float, prev_h: float, prev_l: float, prev_c: fl
     )
 
 
-def fetch_prior_day_ohlc_yfinance(symbol: str) -> tuple[float, float, float, float] | None:
+def _fetch_prior_day_ohlc_yfinance_inner(symbol: str) -> tuple[float, float, float, float] | None:
     """Return (open, high, low, close) for the last fully completed daily bar (not today)."""
     ticker = yf.Ticker(symbol)
     hist = ticker.history(period="10d", interval="1d", auto_adjust=False)
     if hist is None or hist.empty or len(hist) < 2:
         return None
-    # Use second-to-last row as "previous completed session" relative to last bar
     row = hist.iloc[-2]
     return float(row["Open"]), float(row["High"]), float(row["Low"]), float(row["Close"])
+
+
+def fetch_prior_day_ohlc_yfinance(symbol: str) -> tuple[float, float, float, float] | None:
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        fut = ex.submit(_fetch_prior_day_ohlc_yfinance_inner, symbol)
+        try:
+            return fut.result(timeout=_YF_PIVOT_SEC)
+        except FutureTimeout:
+            return None
+        except Exception:
+            return None
 
 
 def build_pivot_from_yfinance(symbol: str) -> PivotLevels | None:

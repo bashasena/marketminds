@@ -6,13 +6,14 @@ from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import get_db
 from app.jobs.snapshot_job import run_snapshot_pipeline
 from app.repositories.snapshot_repo import (
+    get_latest_snapshot,
     get_snapshot_for_date,
     list_recent_snapshots,
     upsert_daily_snapshot,
@@ -33,8 +34,12 @@ def snapshot_today(
     today_ist = datetime.now(IST).date()
     if not live:
         row = get_snapshot_for_date(db, today_ist)
+        if row is None:
+            row = get_latest_snapshot(db)
         if row is not None:
             return row.payload
+        # Do not run build_snapshot for normal reads — avoids slow fetches and nginx timeouts.
+        raise HTTPException(status_code=404, detail="no_stored_snapshot")
     payload = build_snapshot(get_settings())
     if persist:
         snap_date = date.fromisoformat(str(payload["snapshot_date"]))

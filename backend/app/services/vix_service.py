@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass
 
 import yfinance as yf
+
+_YF_VIX_SEC = 14.0
 
 from app.services.nifty_indices_history import fetch_index_daily_rows
 
@@ -34,9 +37,19 @@ def _vix_from_niftyindices() -> VixReading | None:
     return VixReading(last=last, prev_close=prev, pct_change=pct)
 
 
-def fetch_india_vix(symbol: str = "^INDIAVIX") -> VixReading:
+def _vix_yfinance_hist(symbol: str):
     t = yf.Ticker(symbol)
-    hist = t.history(period="5d", interval="1d")
+    return t.history(period="5d", interval="1d")
+
+
+def fetch_india_vix(symbol: str = "^INDIAVIX") -> VixReading:
+    hist = None
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        fut = ex.submit(_vix_yfinance_hist, symbol)
+        try:
+            hist = fut.result(timeout=_YF_VIX_SEC)
+        except (FutureTimeout, Exception):
+            hist = None
     if hist is not None and not hist.empty:
         last = float(hist["Close"].iloc[-1])
         if len(hist) >= 2:

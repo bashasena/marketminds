@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass
 
 import yfinance as yf
 
 from app.services.nifty_indices_history import fetch_last_close_and_pct_change
+
+logger = logging.getLogger(__name__)
+
+# Yahoo often throttles or returns empty from Docker; cap wait per symbol so the request can finish.
+_YF_PER_SYMBOL_SEC = 14.0
+_NIFTYINDICES_GIFT_SEC = 20.0
 
 
 @dataclass
@@ -32,6 +40,18 @@ def _last_and_pct(symbol: str) -> tuple[float | None, float | None]:
     return last, pct
 
 
+def _fetch_gift_niftyindices_fallback() -> tuple[float | None, float | None, str]:
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        fut = ex.submit(fetch_last_close_and_pct_change, "NIFTY 50")
+        try:
+            a, b = fut.result(timeout=_NIFTYINDICES_GIFT_SEC)
+            return a, b, "GIFT proxy (Nifty EOD via niftyindices)"
+        except (FutureTimeout, Exception) as e:
+            if not isinstance(e, FutureTimeout):
+                logger.debug("niftyindices gift fallback: %s", e)
+            return None, None, "GIFT Nifty (proxy)"
+
+
 def fetch_global_cues(
     gift_symbol: str,
     us_index_symbol: str,
@@ -39,16 +59,27 @@ def fetch_global_cues(
     usd_inr: str,
     crude_symbol: str,
 ) -> dict[str, TickerBar]:
-    gift_last, gift_pct = _last_and_pct(gift_symbol)
+    # Parallel yfinance: serial was multiple × slow Yahoo = risk of 504 on nginx.
+    yf_args = (gift_symbol, us_index_symbol, gold_fut, usd_inr, crude_symbol)
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        futs = [ex.submit(_last_and_pct, s) for s in yf_args]
+        results = []
+        for f in futs:
+            try:
+                results.append(f.result(timeout=_YF_PER_SYMBOL_SEC))
+            except (FutureTimeout, Exception) as e:
+                if not isinstance(e, FutureTimeout):
+                    logger.debug("parallel yf batch: %s", e)
+                results.append((None, None))
+    (gift_last, gift_pct) = results[0]
+    (us_last, us_pct) = results[1]
+    (gold_usd, gold_pct) = results[2]
+    (inr, _) = results[3]
+    (crude, crude_pct) = results[4]
+
     gift_label = "GIFT Nifty (proxy)"
     if gift_last is None:
-        # Yahoo often fails from Docker; NIFTY EOD from niftyindices.com is a usable spot proxy
-        gift_last, gift_pct = fetch_last_close_and_pct_change("NIFTY 50")
-        gift_label = "GIFT proxy (Nifty EOD via niftyindices)"
-    us_last, us_pct = _last_and_pct(us_index_symbol)
-    gold_usd, gold_pct = _last_and_pct(gold_fut)
-    inr, _ = _last_and_pct(usd_inr)
-    crude, crude_pct = _last_and_pct(crude_symbol)
+        gift_last, gift_pct, gift_label = _fetch_gift_niftyindices_fallback()
 
     gold_inr_per_10g: float | None = None
     if gold_usd and inr:
