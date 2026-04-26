@@ -43,6 +43,10 @@ export type Snapshot = {
     put_oi_total: number;
     resistance_strike_call_oi: number | null;
     support_strike_put_oi: number | null;
+    /** Open interest (contracts) at the call wall strike */
+    call_wall_oi?: number;
+    /** Open interest (contracts) at the put wall strike */
+    put_wall_oi?: number;
     note: string;
   };
   global: Record<

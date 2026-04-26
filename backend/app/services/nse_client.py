@@ -27,7 +27,8 @@ DEFAULT_HEADERS = {
 
 def _retryable_nse(exc: BaseException) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
-        return exc.response.status_code >= 500
+        c = exc.response.status_code
+        return c >= 500 or c == 429
     return isinstance(
         exc,
         (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout, httpx.ConnectTimeout, httpx.RemoteProtocolError),
@@ -51,6 +52,7 @@ class NSEClient:
         for path, params in (
             ("/api/marketStatus", None),
             ("/api/equity-stockIndices", {"index": "NIFTY 50"}),
+            ("/option-chain", None),
             ("/", None),
         ):
             try:
@@ -72,10 +74,16 @@ class NSEClient:
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=8),
     )
-    def get_json(self, path: str, params: dict[str, str] | None = None) -> dict[str, Any]:
+    def get_json(
+        self,
+        path: str,
+        params: dict[str, str] | None = None,
+        *,
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         client = self._ensure_client()
         url = NSE_BASE + path if path.startswith("/") else f"{NSE_BASE}/{path}"
-        resp = client.get(url, params=params)
+        resp = client.get(url, params=params, headers=extra_headers)
         resp.raise_for_status()
         return resp.json()
 
@@ -88,3 +96,11 @@ def get_nse_client() -> NSEClient:
     if _nse_singleton is None:
         _nse_singleton = NSEClient()
     return _nse_singleton
+
+
+def reset_nse_client() -> None:
+    """Drop the singleton so the next call opens a new session (cookies, warm)."""
+    global _nse_singleton
+    if _nse_singleton is not None:
+        _nse_singleton.close()
+    _nse_singleton = None

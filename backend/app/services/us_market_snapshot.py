@@ -16,10 +16,9 @@ from app.services.narrative_service import (
     dashboard_title,
     global_note,
     index_narrative,
-    options_note,
     pivot_note,
 )
-from app.services.options_service import fetch_nifty_options_snapshot
+from app.services.options_service import fetch_nifty_options_snapshot, options_snapshot_to_api_dict
 from app.services.technical_levels import (
     build_pivot_from_yahoo_chart_api,
     build_pivot_from_yfinance,
@@ -163,17 +162,7 @@ def build_us_snapshot(settings: Settings | None = None) -> dict[str, Any]:
             "dii_net_crores": fii_india.dii_net_crores,
             "note": _us_fii_note(),
         },
-        "options": {
-            "symbol": opts.symbol,
-            "expiry": opts.expiry,
-            "pcr_oi": opts.pcr_oi,
-            "call_oi_total": opts.total_call_oi,
-            "put_oi_total": opts.total_put_oi,
-            "resistance_strike_call_oi": opts.max_call_oi_strike,
-            "support_strike_put_oi": opts.max_put_oi_strike,
-            "note": options_note(opts.pcr_oi, opts.max_put_oi_strike, opts.max_call_oi_strike)
-            or "NSE options chain is India-specific; US options readout not wired.",
-        },
+        "options": options_snapshot_to_api_dict(opts),
         "global": {k: _bar_dict(v) for k, v in globals_map.items()},
         "global_note": _us_global_note(),
         "composite": {

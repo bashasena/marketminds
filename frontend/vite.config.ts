@@ -10,6 +10,7 @@ export default defineConfig({
       "/sentiment": { target: "http://localhost:8000", changeOrigin: true },
       "/health": { target: "http://localhost:8000", changeOrigin: true },
       "/news": { target: "http://localhost:8000", changeOrigin: true },
+      "/x": { target: "http://localhost:8000", changeOrigin: true },
     },
   },
 });

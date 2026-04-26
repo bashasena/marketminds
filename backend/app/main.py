@@ -15,6 +15,7 @@ from app.jobs.snapshot_job import ist_now, run_snapshot_pipeline
 from app.routers.news import router as news_router
 from app.routers.sentiment import router as sentiment_router
 from app.routers.snapshot import router as snapshot_router
+from app.routers.x_sync import router as x_sync_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -67,6 +68,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(snapshot_router)
     app.include_router(sentiment_router)
+    app.include_router(x_sync_router)
     app.include_router(news_router)
 
     @app.get("/")
@@ -82,6 +84,9 @@ def create_app() -> FastAPI:
             "sentiment_x": "/sentiment/x",
             "news": "/news?market=in_nifty",
             "refresh": "POST /snapshot/refresh",
+            "ingest": "POST /snapshot/ingest?persist=true (paste full snapshot JSON; for manual/offline data)",
+            "options_from_nse": "POST /snapshot/options/from-nse-json?persist=true (paste NSE option-chain API JSON)",
+            "x_sync": "POST /x/sync?persist=false (X / List + FinBERT only; optional persist+market to patch latest DB row)",
             "dashboard": "With Docker Compose UI: http://localhost:8080/",
         }
 
