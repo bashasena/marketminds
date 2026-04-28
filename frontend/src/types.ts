@@ -1,3 +1,30 @@
+/** Databento OPRA extras (US SPY/QQQ parent symbology); present on USA snapshots when API key is configured. */
+export type DatabentoOptionsBlock = {
+  source: string;
+  dataset: string;
+  parent_symbol: string;
+  oi_session_date: string;
+  nearest_expiry: string | null;
+  spot_for_atm: number | null;
+  has_quotes: boolean;
+  cleared_volume: { call: number; put: number; pcr: number | null } | null;
+  oi_weighted_iv: { calls: number | null; puts: number | null } | null;
+  atm: {
+    strike: number;
+    call_iv: number | null;
+    put_iv: number | null;
+    call_delta: number | null;
+    put_delta: number | null;
+  } | null;
+  official_prices: {
+    oi_weighted_close_call: number | null;
+    oi_weighted_close_put: number | null;
+    oi_weighted_settlement_call: number | null;
+    oi_weighted_settlement_put: number | null;
+  } | null;
+  note: string;
+};
+
 export type Snapshot = {
   snapshot_date: string;
   generated_at_utc?: string | null;
@@ -35,6 +62,8 @@ export type Snapshot = {
     dii_net_crores: number | null;
     note: string;
   };
+  /** USA only: extended OPRA statistics (volume, IV, delta) when `DATABENTO_API_KEY` is set */
+  databento_options?: DatabentoOptionsBlock | null;
   options: {
     symbol: string;
     expiry: string | null;

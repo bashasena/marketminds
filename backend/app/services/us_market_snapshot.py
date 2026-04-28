@@ -18,7 +18,8 @@ from app.services.narrative_service import (
     index_narrative,
     pivot_note,
 )
-from app.services.options_service import fetch_nifty_options_snapshot, options_snapshot_to_api_dict
+from app.services.databento_options_service import fetch_us_options_snapshot
+from app.services.options_service import options_snapshot_to_api_dict
 from app.services.technical_levels import (
     build_pivot_from_yahoo_chart_api,
     build_pivot_from_yfinance,
@@ -68,7 +69,12 @@ def build_us_snapshot(settings: Settings | None = None) -> dict[str, Any]:
     if vix.last is None:
         vix = fetch_vix_reading("VIXY")
     fii_india = FiiDiiSnapshot(as_of_date=None, fii_net_crores=None, dii_net_crores=None, raw=[])
-    opts = fetch_nifty_options_snapshot("SPY", ref_date=idx.as_of or date.today())
+    spot = idx.close if idx.close is not None else None
+    opts, db_opts, opts_warn = fetch_us_options_snapshot(
+        "SPY", settings=settings, ref_date=idx.as_of or date.today(), spot=spot
+    )
+    if opts_warn:
+        data_warnings.append(opts_warn)
     try:
         globals_map = fetch_global_cues_usd(
             settings.yfin_us_dow_symbol,
@@ -99,7 +105,6 @@ def build_us_snapshot(settings: Settings | None = None) -> dict[str, Any]:
         x_rep.aggregate_score_0_100,
     )
 
-    spot = idx.close or None
     pivot_val = pivots.pivot if pivots else None
 
     snap_date = idx.as_of or date.today()
@@ -163,6 +168,7 @@ def build_us_snapshot(settings: Settings | None = None) -> dict[str, Any]:
             "note": _us_fii_note(),
         },
         "options": options_snapshot_to_api_dict(opts),
+        "databento_options": db_opts,
         "global": {k: _bar_dict(v) for k, v in globals_map.items()},
         "global_note": _us_global_note(),
         "composite": {

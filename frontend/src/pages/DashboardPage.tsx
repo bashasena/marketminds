@@ -4,12 +4,144 @@ import { NewsSection } from "../components/NewsSection";
 import { Card } from "../components/ui/Card";
 import { useMarket } from "../market/MarketContext";
 import { MARKETS } from "../market/types";
-import type { Snapshot } from "../types";
+import type { DatabentoOptionsBlock, Snapshot } from "../types";
 import { persistSnapshot, readStoredSnapshot } from "../snapshotStorage";
 
 function fmtNum(n: number | null | undefined, digits = 2) {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
   return n.toLocaleString(undefined, { maximumFractionDigits: digits });
+}
+
+/** Many venues encode IV as decimal (0.22 = 22%). */
+function fmtIv(v: number | null | undefined) {
+  if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  if (v >= 0 && v <= 1) return `${(v * 100).toFixed(1)}%`;
+  if (v > 1 && v <= 100) return `${v.toFixed(1)}%`;
+  return v.toLocaleString(undefined, { maximumFractionDigits: 3 });
+}
+
+function fmtDelta(v: number | null | undefined) {
+  if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  return v.toLocaleString(undefined, { maximumFractionDigits: 3 });
+}
+
+function DatabentoOptionsSection({ block }: { block: DatabentoOptionsBlock }) {
+  const cv = block.cleared_volume;
+  const iv = block.oi_weighted_iv;
+  const atm = block.atm;
+  const off = block.official_prices;
+  const subParts = [block.dataset];
+  if (block.spot_for_atm != null && block.spot_for_atm > 0) {
+    subParts.push(`Spot for ATM: ${fmtNum(block.spot_for_atm, 2)}`);
+  }
+
+  return (
+    <Card title="Databento OPRA — parent chain" subtitle={subParts.join(" · ")}>
+      <p className="text-xs text-slate-500">
+        {block.parent_symbol} · Statistics session (T+1 weekday):{" "}
+        <span className="text-slate-300">{block.oi_session_date}</span>
+        {block.nearest_expiry ? (
+          <>
+            {" "}
+            · Chain expiry: <span className="text-slate-300">{block.nearest_expiry}</span>
+          </>
+        ) : null}
+      </p>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+        {cv ? (
+          <>
+            <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+              <p className="text-xs text-slate-500">Cleared vol — calls</p>
+              <p className="mt-1 text-xl font-semibold text-white">{fmtNum(cv.call, 0)}</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+              <p className="text-xs text-slate-500">Cleared vol — puts</p>
+              <p className="mt-1 text-xl font-semibold text-white">{fmtNum(cv.put, 0)}</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+              <p className="text-xs text-slate-500">PCR (cleared volume)</p>
+              <p className="mt-1 text-xl font-semibold text-white">{fmtNum(cv.pcr, 3)}</p>
+            </div>
+          </>
+        ) : (
+          <div className="rounded-xl border border-slate-800 border-dashed bg-slate-950/20 p-3 md:col-span-3">
+            <p className="text-xs text-slate-500">Cleared contract volume</p>
+            <p className="mt-1 text-sm text-slate-400">Not published for this slice / session.</p>
+          </div>
+        )}
+      </div>
+
+      {iv ? (
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="rounded-xl border border-cyan-950/50 bg-slate-950/40 p-3">
+            <p className="text-xs text-cyan-200/70">OI-weighted IV — calls</p>
+            <p className="mt-1 text-xl font-semibold text-cyan-100">{fmtIv(iv.calls)}</p>
+          </div>
+          <div className="rounded-xl border border-cyan-950/50 bg-slate-950/40 p-3">
+            <p className="text-xs text-cyan-200/70">OI-weighted IV — puts</p>
+            <p className="mt-1 text-xl font-semibold text-cyan-100">{fmtIv(iv.puts)}</p>
+          </div>
+        </div>
+      ) : null}
+
+      {atm ? (
+        <div className="mt-4">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Near-ATM strike</p>
+          <div className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+              <p className="text-xs text-slate-500">Strike</p>
+              <p className="mt-1 text-lg font-semibold text-white">{fmtNum(atm.strike, 2)}</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+              <p className="text-xs text-slate-500">Call IV</p>
+              <p className="mt-1 text-lg font-semibold text-white">{fmtIv(atm.call_iv)}</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+              <p className="text-xs text-slate-500">Put IV</p>
+              <p className="mt-1 text-lg font-semibold text-white">{fmtIv(atm.put_iv)}</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+              <p className="text-xs text-slate-500">Δ call / put</p>
+              <p className="mt-1 text-sm font-semibold text-slate-100">
+                {fmtDelta(atm.call_delta)} / {fmtDelta(atm.put_delta)}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {off &&
+      (off.oi_weighted_close_call != null ||
+        off.oi_weighted_close_put != null ||
+        off.oi_weighted_settlement_call != null ||
+        off.oi_weighted_settlement_put != null) ? (
+        <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-3 text-sm">
+            <p className="text-xs text-slate-500">OI-weighted close (prem.)</p>
+            <p className="mt-1 text-slate-200">
+              Call {fmtNum(off.oi_weighted_close_call, 4)} · Put {fmtNum(off.oi_weighted_close_put, 4)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/30 p-3 text-sm">
+            <p className="text-xs text-slate-500">OI-weighted settlement (prem.)</p>
+            <p className="mt-1 text-slate-200">
+              Call {fmtNum(off.oi_weighted_settlement_call, 4)} · Put {fmtNum(off.oi_weighted_settlement_put, 4)}
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {!block.has_quotes ? (
+        <p className="mt-4 text-xs text-amber-200/85">
+          Extended stats (volume / IV / delta / settlement) were not available in the OPRA statistics feed for this
+          session—the venue may only have published open interest for these instruments.
+        </p>
+      ) : null}
+
+      <p className="mt-4 text-xs leading-relaxed text-slate-500">{block.note}</p>
+    </Card>
+  );
 }
 
 function pctChip(pct: number | null | undefined) {
@@ -307,13 +439,27 @@ export function DashboardPage() {
               {data.options.pcr_oi == null &&
               data.options.call_oi_total === 0 &&
               data.options.put_oi_total === 0 ? (
-                <p className="mt-2 text-xs leading-relaxed text-amber-200/85">
-                  If this never populates, the backend likely got an empty response from NSE (common when the server
-                  runs outside India or NSE blocks automated access). Check the amber notice under the page title, or
-                  run the stack from a network that can open the NSE option chain in a browser.
-                </p>
+                data.meta?.market_id === "us_broad" || data.meta?.market_id === "usa_nasdaq" ? (
+                  <p className="mt-2 text-xs leading-relaxed text-amber-200/85">
+                    US ETF options come from Databento OPRA (parent symbology). Add{" "}
+                    <span className="text-slate-300">DATABENTO_API_KEY</span> to your environment, rebuild the API, and
+                    check the Data notes above if it stays empty.
+                  </p>
+                ) : (
+                  <p className="mt-2 text-xs leading-relaxed text-amber-200/85">
+                    If this never populates, the backend likely got an empty response from NSE (common when the server
+                    runs outside India or NSE blocks automated access). Check the amber notice under the page title, or
+                    run the stack from a network that can open the NSE option chain in a browser.
+                  </p>
+                )
               ) : null}
             </Card>
+
+            {data.databento_options ? (
+              <div className="lg:col-span-2">
+                <DatabentoOptionsSection block={data.databento_options} />
+              </div>
+            ) : null}
 
             <Card title="Global & commodities" subtitle={globalSub}>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
