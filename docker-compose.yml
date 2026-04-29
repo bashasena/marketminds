@@ -18,10 +18,14 @@ services:
   api:
     build:
       context: ./backend
+    # Load secrets from the project root `.env` (next to this file). `required: false` allows running
+    # without a file. Values here are injected into the container; explicit `environment` below still
+    # overrides per key (e.g. DATABASE_URL must point at the `db` service, not localhost).
+    env_file:
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql://snapshot:snapshot@db:5432/market_snapshot
-      XBEARER_TOKEN: ${XBEARER_TOKEN:-}
-      X_LIST_ID: ${X_LIST_ID:-}
       SNAPSHOT_CRON_HOUR: ${SNAPSHOT_CRON_HOUR:-16}
       SNAPSHOT_CRON_MINUTE: ${SNAPSHOT_CRON_MINUTE:-0}
       INTRADAY_REFRESH_MINUTES: ${INTRADAY_REFRESH_MINUTES:-0}

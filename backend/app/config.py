@@ -42,6 +42,15 @@ class Settings(BaseSettings):
     x_bearer_token: Optional[str] = Field(default=None, validation_alias=AliasChoices("XBEARER_TOKEN", "x_bearer_token"))
     x_list_id: Optional[str] = Field(default=None, validation_alias=AliasChoices("X_LIST_ID", "x_list_id"))
 
+    # Databento OPRA (US ETF options PCR for SPY / QQQ — optional; T+1 OI via prior weekday)
+    databento_api_key: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices("DATABENTO_API_KEY", "databento_api_key")
+    )
+    databento_dataset: str = Field(
+        default="OPRA.PILLAR",
+        validation_alias=AliasChoices("DATABENTO_DATASET", "databento_dataset"),
+    )
+
     # Scheduler (IST) — also accepts SNAPSHOT_CRON_HOUR style env names
     snapshot_cron_hour: int = Field(default=16, validation_alias=AliasChoices("SNAPSHOT_CRON_HOUR", "snapshot_cron_hour"))
     snapshot_cron_minute: int = Field(

@@ -12,5 +12,6 @@ numpy>=1.26,<2.1
 apscheduler==3.10.4
 python-dotenv==1.0.1
 tenacity==9.0.0
+databento>=0.35,<1
 torch>=2.2,<2.6
 transformers>=4.36,<4.50

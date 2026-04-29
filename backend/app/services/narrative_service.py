@@ -62,14 +62,28 @@ def fii_note(fii: float | None, dii: float | None) -> str:
     return "; ".join(parts) + "."
 
 
-def options_note(pcr: float | None, put_wall: float | None, call_wall: float | None) -> str:
+def options_note(
+    pcr: float | None,
+    put_strike: float | None = None,
+    call_strike: float | None = None,
+    put_wall_oi: float | None = None,
+    call_wall_oi: float | None = None,
+) -> str:
     if pcr is None:
         return "Options skew unavailable."
     skew = "elevated put interest" if pcr > 1.1 else "call-heavy OI" if pcr < 0.85 else "balanced OI"
-    walls = ""
-    if put_wall and call_wall:
-        walls = f" Max put OI {put_wall:,.0f} vs max call OI {call_wall:,.0f}."
-    return f"PCR (OI) at {pcr:.2f} suggests {skew}.{walls}"
+    base = f"PCR (OI) at {pcr:.2f} suggests {skew}."
+    pw = put_wall_oi or 0.0
+    cw = call_wall_oi or 0.0
+    if put_strike is not None and call_strike is not None and pw > 0 and cw > 0:
+        return (
+            f"{base} Put wall {put_strike:,.0f} (OI {pw:,.0f}) vs call wall {call_strike:,.0f} (OI {cw:,.0f})."
+        )
+    if put_strike is not None and pw > 0:
+        return f"{base} Heaviest put OI at {put_strike:,.0f} ({pw:,.0f} contracts)."
+    if call_strike is not None and cw > 0:
+        return f"{base} Heaviest call OI at {call_strike:,.0f} ({cw:,.0f} contracts)."
+    return base
 
 
 def global_note(gift_pct: float | None, us_pct: float | None) -> str:

@@ -17,10 +17,9 @@ from app.services.narrative_service import (
     fii_note,
     global_note,
     index_narrative,
-    options_note,
     pivot_note,
 )
-from app.services.options_service import fetch_nifty_options_snapshot
+from app.services.options_service import fetch_nifty_options_snapshot, options_snapshot_to_api_dict
 from app.services.technical_levels import build_pivot_from_yfinance_or_niftyindices
 from app.services.vix_service import fetch_india_vix
 from app.services.x_sentiment_service import build_x_sentiment_report
@@ -51,6 +50,12 @@ def build_snapshot(settings: Settings | None = None) -> dict[str, Any]:
     vix = fetch_india_vix(settings.yfin_vix_symbol)
     fii = fetch_fii_dii()
     opts = fetch_nifty_options_snapshot(settings.nifty_options_symbol, ref_date=idx.as_of or date.today())
+    if opts.pcr_oi is None and (opts.total_call_oi + opts.total_put_oi) == 0:
+        data_warnings.append(
+            "nifty_options: no OI/PCR — NSE returned an empty option chain (typical if the API host is "
+            "outside India, blocked, or session rejected). Run the backend from an Indian network or VPN, "
+            "or verify the NSE option-chain API returns a non-empty 'records' object from the same host."
+        )
     try:
         globals_map = fetch_global_cues(
             settings.yfin_gift_symbol,
@@ -138,16 +143,7 @@ def build_snapshot(settings: Settings | None = None) -> dict[str, Any]:
             "dii_net_crores": fii.dii_net_crores,
             "note": fii_note(fii.fii_net_crores, fii.dii_net_crores),
         },
-        "options": {
-            "symbol": opts.symbol,
-            "expiry": opts.expiry,
-            "pcr_oi": opts.pcr_oi,
-            "call_oi_total": opts.total_call_oi,
-            "put_oi_total": opts.total_put_oi,
-            "resistance_strike_call_oi": opts.max_call_oi_strike,
-            "support_strike_put_oi": opts.max_put_oi_strike,
-            "note": options_note(opts.pcr_oi, opts.max_put_oi_strike, opts.max_call_oi_strike),
-        },
+        "options": options_snapshot_to_api_dict(opts),
         "global": {k: _bar_dict(v) for k, v in globals_map.items()},
         "global_note": global_note(
             globals_map["gift_nifty"].pct_change,
