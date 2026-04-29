@@ -155,6 +155,48 @@ function pctChip(pct: number | null | undefined) {
   );
 }
 
+/** US markets only — avoids saying "add API key" when key is set but data/cache is stale. */
+function usOptionsEmptyFollowUp(data: Snapshot) {
+  const warnings = data.meta?.data_warnings ?? [];
+  const noDatabentoKey = warnings.some((w) => w.includes("set DATABENTO_API_KEY"));
+  const databentoErr = warnings.some((w) => w.startsWith("us_options_databento:"));
+  const hasDetail = Boolean(data.databento_options);
+
+  if (noDatabentoKey) {
+    return (
+      <p className="mt-2 text-xs leading-relaxed text-amber-200/85">
+        US ETF options use Databento OPRA (parent symbology). Add{" "}
+        <span className="text-slate-300">DATABENTO_API_KEY</span> to the <span className="text-slate-300">project root</span> dotenv
+        (next to <span className="text-slate-300">docker-compose.yml</span>), restart the <span className="text-slate-300">api</span> container,
+        then use <span className="text-slate-300">Load live</span> or Admin to refresh the snapshot.
+      </p>
+    );
+  }
+  if (databentoErr) {
+    return (
+      <p className="mt-2 text-xs leading-relaxed text-amber-200/85">
+        Databento could not return options for this build. See <span className="text-slate-300">Data notes</span> above for the error text
+        (subscription, dataset, or date range).
+      </p>
+    );
+  }
+  if (hasDetail) {
+    return (
+      <p className="mt-2 text-xs leading-relaxed text-amber-200/85">
+        OI is still zero for this expiry/session. Check the <span className="text-slate-300">Databento OPRA</span> section below and Data notes;
+        the venue may not have published joinable statistics for that day.
+      </p>
+    );
+  }
+  return (
+    <p className="mt-2 text-xs leading-relaxed text-amber-200/85">
+      This view is missing a <span className="text-slate-300">Databento</span> options block — usually a <span className="text-slate-300">saved</span> or
+      <span className="text-slate-300"> cached</span> snapshot from before the key was wired in. Use <span className="text-slate-300">Load live</span> (or Admin live
+      refresh), run <span className="text-slate-300">docker compose up --build -d</span> so the API matches this repo, then hard-refresh the browser.
+    </p>
+  );
+}
+
 function StickyTopBar() {
   const { market, setMarket } = useMarket();
   const [searchParams] = useSearchParams();
@@ -440,11 +482,7 @@ export function DashboardPage() {
               data.options.call_oi_total === 0 &&
               data.options.put_oi_total === 0 ? (
                 data.meta?.market_id === "us_broad" || data.meta?.market_id === "usa_nasdaq" ? (
-                  <p className="mt-2 text-xs leading-relaxed text-amber-200/85">
-                    US ETF options come from Databento OPRA (parent symbology). Add{" "}
-                    <span className="text-slate-300">DATABENTO_API_KEY</span> to your environment, rebuild the API, and
-                    check the Data notes above if it stays empty.
-                  </p>
+                  usOptionsEmptyFollowUp(data)
                 ) : (
                   <p className="mt-2 text-xs leading-relaxed text-amber-200/85">
                     If this never populates, the backend likely got an empty response from NSE (common when the server
