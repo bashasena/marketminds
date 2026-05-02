@@ -13,6 +13,21 @@ from sqlalchemy.sql import func
 from app.db import Base
 
 
+class OptionOiTick(Base):
+    """Time-series of ATM-band call/put OI for rolling PCR (e.g. 15‑minute window)."""
+
+    __tablename__ = "option_oi_ticks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    market_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    expiry: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    spot: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    atm_call_oi: Mapped[float] = mapped_column(Float, nullable=False)
+    atm_put_oi: Mapped[float] = mapped_column(Float, nullable=False)
+
+
 class DailySnapshot(Base):
     """One row per calendar day: full JSON payload + headline fields for queries."""
 

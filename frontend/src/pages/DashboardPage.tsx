@@ -448,37 +448,94 @@ export function DashboardPage() {
               </Card>
             ) : null}
 
-            <Card title="Options positioning" subtitle={`${data.options.symbol}${data.options.expiry ? ` · ${data.options.expiry}` : ""}`}>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <Card
+              title="Options positioning"
+              subtitle={`${data.options.symbol}${data.options.expiry ? ` · ${data.options.expiry}` : ""}${
+                data.options.atm_strike != null ? ` · ATM ${fmtNum(data.options.atm_strike, 0)}` : ""
+              }`}
+            >
+              {(data.options.metrics_schema_version == null || data.options.metrics_schema_version < 2) &&
+              (data.options.call_oi_total > 0 || data.options.put_oi_total > 0 || data.options.pcr_oi != null) ? (
+                <div className="mb-3 rounded-lg border border-amber-800/60 bg-amber-950/25 px-3 py-2 text-xs leading-relaxed text-amber-100/90">
+                  This saved snapshot predates{" "}
+                  <span className="text-slate-200">ATM-band options metrics (schema v2)</span>. The PCR and “OI total”
+                  fields may still reflect the <span className="text-slate-200">full option chain</span> from an older
+                  build. Open <span className="text-slate-200">Admin</span> → &quot;Refresh live &amp; save to
+                  database&quot;, or use <span className="text-slate-200">Load live</span> and persist, then reload with
+                  &quot;Use saved&quot; to see ATM ±3 PCR and intraday fields.
+                </div>
+              ) : null}
+              {data.options.metrics_schema_version != null &&
+              data.options.metrics_schema_version >= 2 &&
+              Array.isArray(data.options.atm_band_strikes) &&
+              data.options.atm_band_strikes.length > 0 ? (
+                <p className="mb-3 text-[11px] leading-snug text-slate-500">
+                  PCR denominator/numerator use{" "}
+                  <span className="text-slate-400">
+                    {data.options.atm_band_strikes.length} strikes (ATM ±3)
+                  </span>
+                  :{" "}
+                  {data.options.atm_band_strikes
+                    .map((s) => fmtNum(s, data.options.atm_band_strikes!.some((x) => Math.abs(x % 1) > 1e-6) ? 2 : 0))
+                    .join(", ")}
+                  .
+                </p>
+              ) : null}
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                 <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-                  <p className="text-xs text-slate-500">PCR (OI)</p>
-                  <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.options.pcr_oi, 3)}</p>
+                  <p className="text-xs text-slate-500">PCR (ATM ±3)</p>
+                  <p className="mt-1 text-xl font-semibold text-white">
+                    {fmtNum(data.options.pcr_atm ?? data.options.pcr_oi, 3)}
+                  </p>
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-                  <p className="text-xs text-slate-500">Total call OI</p>
+                  <p className="text-xs text-slate-500">PCR (~15m, ATM band Δ)</p>
+                  <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.options.pcr_15m, 3)}</p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                  <p className="text-xs text-slate-500">Call OI (ATM band)</p>
                   <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.options.call_oi_total, 0)}</p>
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-                  <p className="text-xs text-slate-500">Total put OI</p>
+                  <p className="text-xs text-slate-500">Put OI (ATM band)</p>
                   <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.options.put_oi_total, 0)}</p>
                 </div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3 md:col-span-1">
-                  <p className="text-xs text-slate-500">Put OI wall (support)</p>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                  <p className="text-xs text-slate-500">ΔOI calls (sess.)</p>
+                  <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.options.call_oi_change, 0)}</p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                  <p className="text-xs text-slate-500">ΔOI puts (sess.)</p>
+                  <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.options.put_oi_change, 0)}</p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                  <p className="text-xs text-slate-500">Aggression (calls)</p>
+                  <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.options.call_aggression, 0)}</p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                  <p className="text-xs text-slate-500">Aggression (puts)</p>
+                  <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.options.put_aggression, 0)}</p>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3 md:col-span-2">
+                  <p className="text-xs text-slate-500">Put wall — active strikes</p>
                   <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.options.support_strike_put_oi, 0)}</p>
                   {data.options.put_wall_oi != null && data.options.put_wall_oi > 0 ? (
-                    <p className="mt-0.5 text-xs text-slate-500">Max OI: {fmtNum(data.options.put_wall_oi, 0)}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">OI @ strike: {fmtNum(data.options.put_wall_oi, 0)}</p>
                   ) : null}
                 </div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3 md:col-span-1">
-                  <p className="text-xs text-slate-500">Call OI wall (resistance)</p>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3 md:col-span-2">
+                  <p className="text-xs text-slate-500">Call wall — active strikes</p>
                   <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.options.resistance_strike_call_oi, 0)}</p>
                   {data.options.call_wall_oi != null && data.options.call_wall_oi > 0 ? (
-                    <p className="mt-0.5 text-xs text-slate-500">Max OI: {fmtNum(data.options.call_wall_oi, 0)}</p>
+                    <p className="mt-0.5 text-xs text-slate-500">OI @ strike: {fmtNum(data.options.call_wall_oi, 0)}</p>
                   ) : null}
                 </div>
               </div>
+              {data.options.metrics_note ? (
+                <p className="mt-3 text-[11px] leading-snug text-slate-500">{data.options.metrics_note}</p>
+              ) : null}
               <p className="mt-3 text-sm text-slate-300">{data.options.note}</p>
-              {data.options.pcr_oi == null &&
+              {(data.options.pcr_atm ?? data.options.pcr_oi) == null &&
               data.options.call_oi_total === 0 &&
               data.options.put_oi_total === 0 ? (
                 data.meta?.market_id === "us_broad" || data.meta?.market_id === "usa_nasdaq" ? (

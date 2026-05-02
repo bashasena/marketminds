@@ -137,7 +137,12 @@ export function AdminPage() {
       );
       const j = (await r.json()) as {
         ok?: boolean;
-        options?: { pcr_oi?: number | null; call_oi_total?: number; put_oi_total?: number };
+        options?: {
+          pcr_atm?: number | null;
+          pcr_oi?: number | null;
+          call_oi_total?: number;
+          put_oi_total?: number;
+        };
         patched_snapshot_date?: string;
         detail?: string | { msg?: string }[];
       };
@@ -147,9 +152,9 @@ export function AdminPage() {
         setNseErr(msg != null && String(msg) ? String(msg) : `${r.status} ${r.statusText}`);
         return;
       }
-      const pcr = j.options?.pcr_oi;
+      const pcr = j.options?.pcr_atm ?? j.options?.pcr_oi;
       setNseOk(
-        `Options merged into snapshot ${j.patched_snapshot_date ?? "?"}. PCR (OI): ${pcr != null ? pcr.toFixed(3) : "—"}.`,
+        `Options merged into snapshot ${j.patched_snapshot_date ?? "?"}. PCR (ATM ±3): ${pcr != null ? pcr.toFixed(3) : "—"}.`,
       );
       const rr = await fetch(`/snapshot/today?market=${encodeURIComponent(market)}&live=false`);
       if (rr.ok) {

@@ -19,21 +19,23 @@ IST = ZoneInfo("Asia/Kolkata")
 
 def run_snapshot_pipeline(persist: bool = True, market: str = "in_nifty") -> dict:
     settings = get_settings()
-    if market == "us_broad":
-        payload = build_us_snapshot(settings)
-    elif market == "usa_nasdaq":
-        payload = build_us_nasdaq_snapshot(settings)
-    else:
-        payload = build_snapshot(settings)
-    snap_date = date.fromisoformat(str(payload["snapshot_date"]))
-    comp = payload.get("composite", {}).get("score_0_100")
-    nifty_close = payload.get("index", {}).get("close")
-    nifty_pct = payload.get("index", {}).get("pct_change")
-    fii = payload.get("fii_dii", {})
-    fii_date = fii.get("as_of")
-    if persist:
-        db = SessionLocal()
-        try:
+    nifty_close = None
+    snap_date = None
+    db = SessionLocal()
+    try:
+        if market == "us_broad":
+            payload = build_us_snapshot(settings, db=db)
+        elif market == "usa_nasdaq":
+            payload = build_us_nasdaq_snapshot(settings, db=db)
+        else:
+            payload = build_snapshot(settings, db=db)
+        snap_date = date.fromisoformat(str(payload["snapshot_date"]))
+        comp = payload.get("composite", {}).get("score_0_100")
+        nifty_close = payload.get("index", {}).get("close")
+        nifty_pct = payload.get("index", {}).get("pct_change")
+        fii = payload.get("fii_dii", {})
+        fii_date = fii.get("as_of")
+        if persist:
             upsert_daily_snapshot(db, snap_date, payload, comp, nifty_close, nifty_pct, market_id=market)
             if market == "in_nifty" and fii_date:
                 fd = date.fromisoformat(str(fii_date))
@@ -44,10 +46,16 @@ def run_snapshot_pipeline(persist: bool = True, market: str = "in_nifty") -> dic
                     fii.get("dii_net_crores"),
                     raw_note=None,
                 )
-        finally:
-            db.close()
-    logger.info("Snapshot pipeline OK date=%s market=%s persist=%s close=%s", snap_date, market, persist, nifty_close)
-    return payload
+        logger.info(
+            "Snapshot pipeline OK date=%s market=%s persist=%s close=%s",
+            snap_date,
+            market,
+            persist,
+            nifty_close,
+        )
+        return payload
+    finally:
+        db.close()
 
 
 def ist_now() -> datetime:

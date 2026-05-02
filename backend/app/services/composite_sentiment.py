@@ -8,7 +8,7 @@ Weights are chosen for an India cash + derivatives desk-style read:
 |-----------------|--------|------------------------------------------------|
 | Index % change  | 0.22   | Trend and risk appetite in the headline index |
 | India VIX       | 0.15   | Fear gauge; rising VIX subtracts from score   |
-| Options PCR(OI) | 0.15   | Positioning skew (OI-based PCR)               |
+| Options PCR(OI) ATM ±3 | 0.15   | Positioning skew near the money |
 | FII net flow    | 0.18   | Foreign positioning in cash market            |
 | X / FinBERT     | 0.30   | Narrative + positioning chatter from List     |
 

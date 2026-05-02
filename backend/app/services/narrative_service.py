@@ -72,7 +72,7 @@ def options_note(
     if pcr is None:
         return "Options skew unavailable."
     skew = "elevated put interest" if pcr > 1.1 else "call-heavy OI" if pcr < 0.85 else "balanced OI"
-    base = f"PCR (OI) at {pcr:.2f} suggests {skew}."
+    base = f"PCR (ATM ±3 strikes, OI) at {pcr:.2f} suggests {skew}."
     pw = put_wall_oi or 0.0
     cw = call_wall_oi or 0.0
     if put_strike is not None and call_strike is not None and pw > 0 and cw > 0:

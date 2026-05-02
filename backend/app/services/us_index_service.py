@@ -107,6 +107,24 @@ def _hist_last_row(symbol: str):
     return None
 
 
+def underlying_last_for_options_chain(symbol: str) -> float | None:
+    """
+    Last close for an ETF that matches option-chain strikes (e.g. SPY, QQQ).
+
+    Broad cash indices (^GSPC ~5000, ^IXIC ~24000) must **not** be used for ATM selection — they are on a
+    different scale than OPRA strikes (~400–600), which collapses ATM to an extreme chain strike and breaks PCR.
+    """
+    ch = chart_headline_combined(symbol)
+    if ch is not None:
+        _o, _h, _l, last, _pct, _as_of, _used, _mode = ch
+        return float(last)
+    got = _hist_last_row(symbol)
+    if got is None:
+        return None
+    _o, _h, _l, last, _pct, _as_of, _symbol = got
+    return float(last)
+
+
 def _us_headline_chain(
     symbols: tuple[str, ...],
 ) -> tuple[

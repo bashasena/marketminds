@@ -25,6 +25,7 @@ from app.services.composite_sentiment import compute_composite
 from app.services.market_snapshot import build_snapshot
 from app.services.narrative_service import dashboard_title
 from app.services.options_service import (
+    enrich_options_with_history,
     options_from_nse_option_chain_payload,
     options_snapshot_to_api_dict,
 )
@@ -61,11 +62,11 @@ def snapshot_today(
         # Do not run builders for normal reads — avoids slow fetches and nginx timeouts.
         raise HTTPException(status_code=404, detail="no_stored_snapshot")
     if market == "in_nifty":
-        payload = build_snapshot(get_settings())
+        payload = build_snapshot(get_settings(), db=db)
     elif market == "us_broad":
-        payload = build_us_snapshot(get_settings())
+        payload = build_us_snapshot(get_settings(), db=db)
     else:
-        payload = build_us_nasdaq_snapshot(get_settings())
+        payload = build_us_nasdaq_snapshot(get_settings(), db=db)
     if persist:
         snap_date = date.fromisoformat(str(payload["snapshot_date"]))
         comp = payload.get("composite", {}).get("score_0_100")
@@ -199,6 +200,7 @@ def snapshot_options_from_nse_json(
         raise HTTPException(status_code=400, detail=f"bad ref date: {e}") from e
     try:
         opts = options_from_nse_option_chain_payload(body, symbol=symbol, ref_date=ref_d)
+        opts = enrich_options_with_history(db, market, opts, record_tick=True)
     except TypeError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     opt_dict = options_snapshot_to_api_dict(opts)

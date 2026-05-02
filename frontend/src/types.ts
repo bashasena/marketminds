@@ -65,9 +65,16 @@ export type Snapshot = {
   /** USA only: extended OPRA statistics (volume, IV, delta) when `DATABENTO_API_KEY` is set */
   databento_options?: DatabentoOptionsBlock | null;
   options: {
+    /** 2 = ATM ±3 ladder PCR + ATM-band totals + active walls (post-refactor). Older DB snapshots omit this. */
+    metrics_schema_version?: number;
     symbol: string;
     expiry: string | null;
+    /** ATM ±3 strike ladder PCR (primary); mirrors ``pcr_oi`` */
+    pcr_atm?: number | null;
     pcr_oi: number | null;
+    /** ~15m rolling PCR on ATM-band OI added (needs persisted ticks) */
+    pcr_15m?: number | null;
+    /** ATM-band sums (not full chain) */
     call_oi_total: number;
     put_oi_total: number;
     resistance_strike_call_oi: number | null;
@@ -76,6 +83,17 @@ export type Snapshot = {
     call_wall_oi?: number;
     /** Open interest (contracts) at the put wall strike */
     put_wall_oi?: number;
+    atm_strike?: number | null;
+    /** Strikes used for PCR / incremental metrics (ATM ±3 ladder) */
+    atm_band_strikes?: number[];
+    /** Session ΔOI on ATM band (NSE: sum changeinOpenInterest) */
+    call_oi_change?: number | null;
+    put_oi_change?: number | null;
+    /** Σ volume × ΔOI on ATM band */
+    call_aggression?: number | null;
+    put_aggression?: number | null;
+    active_strike_count?: number;
+    metrics_note?: string;
     note: string;
   };
   global: Record<

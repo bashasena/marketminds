@@ -7,6 +7,8 @@ from dataclasses import asdict
 from datetime import date, datetime, timezone
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from app.config import Settings, get_settings
 from app.services.composite_sentiment import compute_composite
 from app.services.fii_dii_service import FiiDiiSnapshot
@@ -23,7 +25,7 @@ from app.services.technical_levels import (
     build_pivot_from_yahoo_chart_api,
     build_pivot_from_yfinance,
 )
-from app.services.us_index_service import fetch_nasdaq_style_snapshot
+from app.services.us_index_service import fetch_nasdaq_style_snapshot, underlying_last_for_options_chain
 from app.services.vix_service import fetch_vix_reading
 from app.services.x_sentiment_service import build_x_sentiment_report
 
@@ -36,7 +38,7 @@ _US_GLOBAL = (
 )
 
 
-def build_us_nasdaq_snapshot(settings: Settings | None = None) -> dict[str, Any]:
+def build_us_nasdaq_snapshot(settings: Settings | None = None, db: Session | None = None) -> dict[str, Any]:
     settings = settings or get_settings()
     data_warnings: list[str] = []
 
@@ -65,9 +67,19 @@ def build_us_nasdaq_snapshot(settings: Settings | None = None) -> dict[str, Any]
     if vix.last is None:
         vix = fetch_vix_reading("VIXY")
     fii_india = FiiDiiSnapshot(as_of_date=None, fii_net_crores=None, dii_net_crores=None, raw=[])
-    spot = idx.close if idx.close is not None else None
+    opts_spot = underlying_last_for_options_chain("QQQ")
+    if opts_spot is None:
+        data_warnings.append(
+            "us_options_spot: QQQ last price unavailable — ATM/PCR uses median strike on the ladder "
+            "(never broad-index levels vs ETF strikes)."
+        )
     opts, db_opts, opts_warn = fetch_us_options_snapshot(
-        "QQQ", settings=settings, ref_date=idx.as_of or date.today(), spot=spot
+        "QQQ",
+        settings=settings,
+        ref_date=idx.as_of or date.today(),
+        spot=opts_spot,
+        db=db,
+        market_id="usa_nasdaq",
     )
     if opts_warn:
         data_warnings.append(opts_warn)

@@ -7,6 +7,8 @@ from dataclasses import asdict
 from datetime import date, datetime, timezone
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from app.config import Settings, get_settings
 from app.services.composite_sentiment import compute_composite
 from app.services.fii_dii_service import fetch_fii_dii
@@ -19,7 +21,11 @@ from app.services.narrative_service import (
     index_narrative,
     pivot_note,
 )
-from app.services.options_service import fetch_nifty_options_snapshot, options_snapshot_to_api_dict
+from app.services.options_service import (
+    enrich_options_with_history,
+    fetch_nifty_options_snapshot,
+    options_snapshot_to_api_dict,
+)
 from app.services.technical_levels import build_pivot_from_yfinance_or_niftyindices
 from app.services.vix_service import fetch_india_vix
 from app.services.x_sentiment_service import build_x_sentiment_report
@@ -31,7 +37,7 @@ def _bar_dict(b) -> dict[str, Any]:
     return {"symbol": b.symbol, "label": b.label, "last": b.last, "pct_change": b.pct_change, "currency": b.currency}
 
 
-def build_snapshot(settings: Settings | None = None) -> dict[str, Any]:
+def build_snapshot(settings: Settings | None = None, db: Session | None = None) -> dict[str, Any]:
     settings = settings or get_settings()
     data_warnings: list[str] = []
 
@@ -50,6 +56,7 @@ def build_snapshot(settings: Settings | None = None) -> dict[str, Any]:
     vix = fetch_india_vix(settings.yfin_vix_symbol)
     fii = fetch_fii_dii()
     opts = fetch_nifty_options_snapshot(settings.nifty_options_symbol, ref_date=idx.as_of or date.today())
+    opts = enrich_options_with_history(db, "in_nifty", opts, record_tick=db is not None)
     if opts.pcr_oi is None and (opts.total_call_oi + opts.total_put_oi) == 0:
         data_warnings.append(
             "nifty_options: no OI/PCR — NSE returned an empty option chain (typical if the API host is "

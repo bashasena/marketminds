@@ -5,7 +5,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.db import Base
-from app.models import DailySnapshot, FiiDiiFlow  # noqa: F401
+from app.models import DailySnapshot, FiiDiiFlow, OptionOiTick  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

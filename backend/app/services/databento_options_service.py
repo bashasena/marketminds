@@ -6,6 +6,8 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 import numpy as np
 import pandas as pd
 from databento_dbn import (
@@ -16,8 +18,21 @@ from databento_dbn import (
     UNDEF_PRICE,
 )
 
+from sqlalchemy.orm import Session
+
 from app.config import Settings
-from app.services.options_service import OptionsSnapshot
+from app.services.options_analytics import (
+    StrikeLegs,
+    compute_active_strikes,
+    compute_aggression,
+    compute_oi_walls,
+    compute_pcr_atm,
+    get_atm_band_strikes,
+    get_atm_strike,
+    sum_band_oi,
+    unique_sorted_strikes,
+)
+from app.services.options_service import OptionsSnapshot, enrich_options_with_history
 
 logger = logging.getLogger(__name__)
 
@@ -32,19 +47,7 @@ _STAT_TYPES_WIDE = (
 
 
 def _empty(symbol: str) -> OptionsSnapshot:
-    return OptionsSnapshot(
-        symbol=symbol,
-        expiry=None,
-        pcr_oi=None,
-        total_call_oi=0.0,
-        total_put_oi=0.0,
-        max_call_oi_strike=None,
-        max_put_oi_strike=None,
-        max_call_oi=0.0,
-        max_put_oi=0.0,
-        spot=None,
-        raw_expiry_dates=[],
-    )
+    return OptionsSnapshot(symbol=symbol.strip().upper(), expiry=None, pcr_oi=None)
 
 
 def _prior_weekday(ref: date) -> date:
@@ -283,56 +286,81 @@ def _databento_options_bundle(
         return _empty(sym), {**base_detail, "note": "No chain rows for the nearest expiry slice."}
 
     strike_col = "strike_price"
-    total_call = 0.0
-    total_put = 0.0
-    max_ce_strike: float | None = None
-    max_ce_val = 0.0
-    max_pe_strike: float | None = None
-    max_pe_val = 0.0
-
+    parts: dict[float, dict[str, float]] = {}
     for _, row in merged.iterrows():
-        ic = row["instrument_class"]
         try:
             k = float(row[strike_col])
         except (TypeError, ValueError):
             continue
+        ic = row["instrument_class"]
         try:
             oi = float(row["oi"])
         except (TypeError, ValueError):
             continue
-        if oi <= 0:
-            continue
+        cv = 0.0
+        if "cleared_volume" in merged.columns:
+            raw_cv = row.get("cleared_volume")
+            if raw_cv is not None and not (isinstance(raw_cv, float) and pd.isna(raw_cv)):
+                try:
+                    cv = float(raw_cv)
+                except (TypeError, ValueError):
+                    cv = 0.0
+        slot = parts.setdefault(k, {"call_oi": 0.0, "put_oi": 0.0, "call_vol": 0.0, "put_vol": 0.0})
         if _is_call(ic):
-            total_call += oi
-            if oi > max_ce_val:
-                max_ce_val = oi
-                max_ce_strike = k
+            slot["call_oi"] = oi
+            slot["call_vol"] += cv
         elif _is_put(ic):
-            total_put += oi
-            if oi > max_pe_val:
-                max_pe_val = oi
-                max_pe_strike = k
+            slot["put_oi"] = oi
+            slot["put_vol"] += cv
 
-    if max_ce_val <= 0:
-        max_ce_strike = None
-    if max_pe_val <= 0:
-        max_pe_strike = None
+    strike_rows = [
+        StrikeLegs(
+            strike=k,
+            call_oi=v["call_oi"],
+            put_oi=v["put_oi"],
+            call_vol=v["call_vol"],
+            put_vol=v["put_vol"],
+            call_oi_chg=0.0,
+            put_oi_chg=0.0,
+        )
+        for k, v in sorted(parts.items())
+    ]
+    strikes_u = unique_sorted_strikes(strike_rows)
+    atm = get_atm_strike(spot, strikes_u)
+    if atm is None:
+        return _empty(sym), {**base_detail, "note": base_detail["note"] + " Could not infer ATM strike."}
 
-    pcr = (total_put / total_call) if total_call > 0 else None
+    band = get_atm_band_strikes(strikes_u, atm, width=3)
+    by_k = {r.strike: r for r in strike_rows}
+    pcr_atm = compute_pcr_atm(by_k, band)
+    ce_band, pe_band = sum_band_oi(by_k, band)
+    call_agg, put_agg = compute_aggression(by_k, band)
+
+    active = compute_active_strikes(strike_rows, atm)
+    ce_k, ce_v, pe_k, pe_v = compute_oi_walls(by_k, active)
+
     raw_exp = [d.isoformat() for d in unique_exp[:8]]
 
     snap = OptionsSnapshot(
         symbol=sym,
         expiry=nearest.isoformat(),
-        pcr_oi=pcr,
-        total_call_oi=total_call,
-        total_put_oi=total_put,
-        max_call_oi_strike=max_ce_strike,
-        max_put_oi_strike=max_pe_strike,
-        max_call_oi=float(max_ce_val),
-        max_put_oi=float(max_pe_val),
+        pcr_oi=pcr_atm,
+        pcr_15m=None,
+        total_call_oi=float(ce_band),
+        total_put_oi=float(pe_band),
+        max_call_oi_strike=ce_k,
+        max_put_oi_strike=pe_k,
+        max_call_oi=float(ce_v),
+        max_put_oi=float(pe_v),
         spot=spot,
         raw_expiry_dates=raw_exp,
+        atm_strike=float(atm),
+        atm_band_strikes=list(band),
+        active_strike_count=len(active),
+        call_oi_change=None,
+        put_oi_change=None,
+        call_aggression=float(call_agg),
+        put_aggression=float(put_agg),
     )
 
     call_m = merged[merged["instrument_class"].apply(_is_call)]
@@ -407,6 +435,8 @@ def fetch_us_options_snapshot(
     settings: Settings,
     ref_date: date,
     spot: float | None = None,
+    db: Session | None = None,
+    market_id: str = "us_broad",
 ) -> tuple[OptionsSnapshot, dict[str, Any] | None, str | None]:
     """
     SPY / QQQ options from Databento (parent ``.OPT`` symbol). Returns PCR/OI snapshot plus an optional
@@ -421,6 +451,7 @@ def fetch_us_options_snapshot(
         )
     try:
         snap, detail = _databento_options_bundle(underlying, settings, ref_date, spot)
+        snap = enrich_options_with_history(db, market_id, snap, record_tick=db is not None)
         return snap, detail, None
     except Exception as e:
         logger.warning("Databento options failed for %s: %s", underlying, e, exc_info=True)
