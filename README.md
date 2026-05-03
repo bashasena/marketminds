@@ -8,6 +8,7 @@ End-to-end **daily Market Snapshot** system for India cash + derivatives context
 
 ## Architecture
 
+- **Developer handbook (backend + frontend architecture, flows, extension points):** **[docs/developer-handbook-confluence.md](docs/developer-handbook-confluence.md)** — formatted for Confluence / onboarding.
 - **Backend**: `backend/app` — modular services (`index_service`, `options_service`, `fii_dii_service`, `global_markets_service`, `x_sentiment_service`, `composite_sentiment`, `market_snapshot`), APScheduler jobs, Alembic migrations.
 - **Frontend**: `frontend/src` — responsive dashboard calling `/snapshot/today`.
 - **Infra**: `docker-compose.yml` — `db` (Postgres 16), `api` (Uvicorn + migrations on boot), `web` (nginx → `/snapshot`, `/sentiment`, `/health`).
