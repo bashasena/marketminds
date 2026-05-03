@@ -29,7 +29,8 @@ services:
       SNAPSHOT_CRON_HOUR: ${SNAPSHOT_CRON_HOUR:-16}
       SNAPSHOT_CRON_MINUTE: ${SNAPSHOT_CRON_MINUTE:-0}
       INTRADAY_REFRESH_MINUTES: ${INTRADAY_REFRESH_MINUTES:-0}
-      API_CORS_ORIGINS: http://localhost:5173,http://localhost:8080
+      # Set in root `.env` for production (e.g. https://tradersmind.bashasena.com). Hardcoding here would ignore .env.
+      API_CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:5173,http://localhost:8080}
       DISABLE_FINBERT: 1
       # Slow down Yahoo v8 chart calls if you see 429 (rate limit); default 0.25s between requests
       YAHOO_CHART_MIN_INTERVAL: ${YAHOO_CHART_MIN_INTERVAL:-0.25}
