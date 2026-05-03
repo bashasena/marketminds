@@ -95,6 +95,7 @@ NSE and Yahoo/X availability can change; this stack is intended as a **professio
 
 ## Deployment notes
 
+- **Hostinger VPS + Docker + Caddy (HTTPS, firewall, DNS, CORS):** see **[docs/deployment-hostinger-vps.md](docs/deployment-hostinger-vps.md)**.
 - Run **migrations** before or on boot (`backend/Dockerfile` runs `alembic upgrade head`).
 - Put secrets in the orchestrator (K8s Secrets, ECS parameters), not in the image.
 - For production CORS, set `API_CORS_ORIGINS` to your real UI origin(s).
