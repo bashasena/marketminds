@@ -413,7 +413,7 @@ export function DashboardPage() {
 
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card title="Technical levels" subtitle="Classic pivot (prior session)">
-              <div className="grid grid-cols-5 gap-2 text-center text-xs">
+              <div className="overflow-hidden rounded-xl border border-slate-800/80 bg-gradient-to-b from-emerald-950/70 via-slate-900/40 to-rose-950/70 text-xs">
                 {(
                   [
                     ["S2", data.technical.s2],
@@ -422,10 +422,25 @@ export function DashboardPage() {
                     ["R1", data.technical.r1],
                     ["R2", data.technical.r2],
                   ] as const
-                ).map(([k, v]) => (
-                  <div key={String(k)} className="rounded-lg border border-slate-800 bg-slate-950/40 p-2">
-                    <div className="text-slate-500">{k}</div>
-                    <div className="mt-1 text-sm font-semibold text-slate-100">{fmtNum(v as number | null, 2)}</div>
+                ).map(([k, v], i, arr) => (
+                  <div
+                    key={String(k)}
+                    className={`flex items-center justify-between gap-3 px-3 py-2.5 ${
+                      i < arr.length - 1 ? "border-b border-slate-700/40" : ""
+                    }`}
+                  >
+                    <span
+                      className={
+                        i <= 1
+                          ? "font-medium text-emerald-200/90"
+                          : i >= 3
+                            ? "font-medium text-rose-200/90"
+                            : "font-medium text-amber-100/80"
+                      }
+                    >
+                      {k}
+                    </span>
+                    <span className="text-sm font-semibold tabular-nums text-slate-50">{fmtNum(v as number | null, 2)}</span>
                   </div>
                 ))}
               </div>
