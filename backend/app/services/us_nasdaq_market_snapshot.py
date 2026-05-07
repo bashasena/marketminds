@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 from dataclasses import asdict
 from datetime import date, datetime, timezone
@@ -18,7 +19,7 @@ from app.services.narrative_service import (
     pivot_note,
 )
 from app.services.databento_options_service import fetch_us_options_snapshot
-from app.services.options_service import options_snapshot_to_api_dict
+from app.services.options_service import empty_nifty_options_api_dict, options_snapshot_to_api_dict
 from app.services.technical_levels import (
     build_pivot_from_yahoo_chart_api,
     build_pivot_from_yfinance,
@@ -36,7 +37,15 @@ _US_GLOBAL = (
 )
 
 
-def build_us_nasdaq_snapshot(settings: Settings | None = None) -> dict[str, Any]:
+def build_us_nasdaq_snapshot(
+    settings: Settings | None = None,
+    *,
+    include_x: bool = True,
+    include_us_options: bool = True,
+    stored_options: dict[str, Any] | None = None,
+    stored_databento_options: Any = None,
+    stored_x_summary: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     settings = settings or get_settings()
     data_warnings: list[str] = []
 
@@ -66,11 +75,25 @@ def build_us_nasdaq_snapshot(settings: Settings | None = None) -> dict[str, Any]
         vix = fetch_vix_reading("VIXY")
     fii_india = FiiDiiSnapshot(as_of_date=None, fii_net_crores=None, dii_net_crores=None, raw=[])
     spot = idx.close if idx.close is not None else None
-    opts, db_opts, opts_warn = fetch_us_options_snapshot(
-        "QQQ", settings=settings, ref_date=idx.as_of or date.today(), spot=spot
-    )
-    if opts_warn:
-        data_warnings.append(opts_warn)
+    if include_us_options:
+        opts, db_opts, opts_warn = fetch_us_options_snapshot(
+            "QQQ", settings=settings, ref_date=idx.as_of or date.today(), spot=spot
+        )
+        if opts_warn:
+            data_warnings.append(opts_warn)
+        opts_dict = options_snapshot_to_api_dict(opts)
+        pcr_for_comp = opts.pcr_oi
+        db_out = db_opts
+    else:
+        opts_dict = copy.deepcopy(stored_options) if stored_options else empty_nifty_options_api_dict("QQQ")
+        db_out = copy.deepcopy(stored_databento_options) if stored_databento_options is not None else None
+        if not stored_options:
+            data_warnings.append(
+                "us_options: skipped — no stored ETF options snapshot; run Admin full refresh or set SCHEDULED_US_SNAPSHOT_INCLUDE_OPTIONS=1."
+            )
+        pcr_v = opts_dict.get("pcr_oi")
+        pcr_for_comp = float(pcr_v) if isinstance(pcr_v, (int, float)) and not isinstance(pcr_v, bool) else None
+        spot = idx.close if idx.close is not None else spot
     try:
         globals_map = fetch_global_cues_usd(
             settings.yfin_us_dow_symbol,
@@ -85,20 +108,42 @@ def build_us_nasdaq_snapshot(settings: Settings | None = None) -> dict[str, Any]
         stub = TickerBar(symbol="-", label="Unavailable", last=None, pct_change=None, currency="USD")
         globals_map = {k: stub for k in ("dow", "us_index", "gold_usd_oz", "crude_wti", "dollar_index")}
 
-    x_rep = build_x_sentiment_report(
-        settings.x_bearer_token,
-        settings.x_list_id,
-        settings.x_tweet_lookback_hours,
-        settings.x_max_tweets,
-        settings.finbert_model,
-    )
+    if include_x:
+        x_rep = build_x_sentiment_report(
+            settings.x_bearer_token,
+            settings.x_list_id,
+            settings.x_tweet_lookback_hours,
+            settings.x_max_tweets,
+            settings.finbert_model,
+        )
+        x_agg = x_rep.aggregate_score_0_100
+        x_summary_out = {
+            "aggregate_0_100": x_rep.aggregate_score_0_100,
+            "tweet_count": x_rep.tweet_count,
+            "model": x_rep.model_used,
+            "error": x_rep.error,
+        }
+    else:
+        x_rep = None
+        sx = stored_x_summary or {}
+        xa = sx.get("aggregate_0_100")
+        x_agg = float(xa) if isinstance(xa, (int, float)) and not isinstance(xa, bool) else None
+        _tc = sx.get("tweet_count")
+        x_summary_out = {
+            "aggregate_0_100": x_agg,
+            "tweet_count": int(_tc) if _tc is not None else 0,
+            "model": str(sx.get("model") or "stored"),
+            "error": sx.get("error")
+            or "X List fetch skipped — use Admin “Sync X” or full live refresh with include_x.",
+        }
+
     composite = compute_composite(
         idx.pct_change,
         vix.last,
         vix.pct_change,
-        opts.pcr_oi,
+        pcr_for_comp,
         None,
-        x_rep.aggregate_score_0_100,
+        x_agg,
     )
 
     pivot_val = pivots.pivot if pivots else None
@@ -163,8 +208,8 @@ def build_us_nasdaq_snapshot(settings: Settings | None = None) -> dict[str, Any]
             "dii_net_crores": fii_india.dii_net_crores,
             "note": _US_FII,
         },
-        "options": options_snapshot_to_api_dict(opts),
-        "databento_options": db_opts,
+        "options": opts_dict,
+        "databento_options": db_out,
         "global": {k: _bar_dict(v) for k, v in globals_map.items()},
         "global_note": _US_GLOBAL,
         "composite": {
@@ -174,12 +219,7 @@ def build_us_nasdaq_snapshot(settings: Settings | None = None) -> dict[str, Any]
             "weights": composite.weights,
             "explanation": composite.explanation,
         },
-        "x_sentiment_summary": {
-            "aggregate_0_100": x_rep.aggregate_score_0_100,
-            "tweet_count": x_rep.tweet_count,
-            "model": x_rep.model_used,
-            "error": x_rep.error,
-        },
+        "x_sentiment_summary": x_summary_out,
         "meta": {
             "market_id": "usa_nasdaq",
             "yfin_index": "^IXIC",

@@ -241,3 +241,22 @@ def options_snapshot_to_api_dict(opts: OptionsSnapshot) -> dict[str, Any]:
             opts.max_call_oi,
         ),
     }
+
+
+def empty_nifty_options_api_dict(symbol: str = "NIFTY") -> dict[str, Any]:
+    """Placeholder when NSE option chain is skipped (strip live / scheduled light build)."""
+    return options_snapshot_to_api_dict(
+        OptionsSnapshot(
+            symbol=symbol,
+            expiry=None,
+            pcr_oi=None,
+            total_call_oi=0.0,
+            total_put_oi=0.0,
+            max_call_oi_strike=None,
+            max_put_oi_strike=None,
+            max_call_oi=0.0,
+            max_put_oi=0.0,
+            spot=None,
+            raw_expiry_dates=[],
+        )
+    )

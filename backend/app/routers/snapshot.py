@@ -50,6 +50,10 @@ def snapshot_today(
     market: str = Query("in_nifty", description="in_nifty | us_broad (S&P) | usa_nasdaq (NASDAQ)"),
     live: bool = Query(False, description="Force recompute from upstream sources"),
     persist: bool = Query(False, description="When true, save freshly built snapshot to DB"),
+    strip: bool = Query(
+        False,
+        description="When live=true: refresh cash/index/Yahoo strip only; reuse stored options + X from DB (dashboard live poll)",
+    ),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     if market not in VALID_MARKETS:
@@ -60,12 +64,50 @@ def snapshot_today(
             return row.payload
         # Do not run builders for normal reads — avoids slow fetches and nginx timeouts.
         raise HTTPException(status_code=404, detail="no_stored_snapshot")
-    if market == "in_nifty":
-        payload = build_snapshot(get_settings())
+    settings = get_settings()
+    if strip:
+        row = _row_for_stored_read(db, market)
+        if row is None:
+            raise HTTPException(
+                status_code=404,
+                detail="no_stored_snapshot_for_strip_mode — save a snapshot from Admin first",
+            )
+        stored = row.payload
+        so = stored.get("options")
+        sx = stored.get("x_sentiment_summary")
+        sd = stored.get("databento_options")
+        if market == "in_nifty":
+            payload = build_snapshot(
+                settings,
+                include_x=False,
+                include_nse_options=False,
+                stored_options=so if isinstance(so, dict) else None,
+                stored_x_summary=sx if isinstance(sx, dict) else None,
+            )
+        elif market == "us_broad":
+            payload = build_us_snapshot(
+                settings,
+                include_x=False,
+                include_us_options=False,
+                stored_options=so if isinstance(so, dict) else None,
+                stored_databento_options=sd,
+                stored_x_summary=sx if isinstance(sx, dict) else None,
+            )
+        else:
+            payload = build_us_nasdaq_snapshot(
+                settings,
+                include_x=False,
+                include_us_options=False,
+                stored_options=so if isinstance(so, dict) else None,
+                stored_databento_options=sd,
+                stored_x_summary=sx if isinstance(sx, dict) else None,
+            )
+    elif market == "in_nifty":
+        payload = build_snapshot(settings)
     elif market == "us_broad":
-        payload = build_us_snapshot(get_settings())
+        payload = build_us_snapshot(settings)
     else:
-        payload = build_us_nasdaq_snapshot(get_settings())
+        payload = build_us_nasdaq_snapshot(settings)
     if persist:
         snap_date = date.fromisoformat(str(payload["snapshot_date"]))
         comp = payload.get("composite", {}).get("score_0_100")
@@ -117,7 +159,7 @@ def snapshot_refresh(
     """Manual / hook trigger: rebuild and persist."""
     if market not in VALID_MARKETS:
         raise HTTPException(status_code=400, detail=f"invalid market; use {sorted(VALID_MARKETS)}")
-    payload = run_snapshot_pipeline(persist=True, market=market)
+    payload = run_snapshot_pipeline(persist=True, market=market, full=True)
     return {"ok": True, "snapshot_date": payload.get("snapshot_date"), "market": market}
 
 

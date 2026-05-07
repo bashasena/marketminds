@@ -61,6 +61,30 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("INTRADAY_REFRESH_MINUTES", "intraday_refresh_minutes"),
     )  # 0 = disabled; e.g. 30 or 60
 
+    # Scheduled / intraday jobs only (`run_snapshot_pipeline` without full=True). Defaults avoid paid APIs (X 402) and heavy NSE/Databento hits every N minutes.
+    scheduled_snapshot_include_x: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("SCHEDULED_SNAPSHOT_INCLUDE_X", "scheduled_snapshot_include_x"),
+    )
+    scheduled_snapshot_include_nse_options: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "SCHEDULED_SNAPSHOT_INCLUDE_NSE_OPTIONS",
+            "scheduled_snapshot_include_nse_options",
+        ),
+    )
+    scheduled_us_snapshot_include_x: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("SCHEDULED_US_SNAPSHOT_INCLUDE_X", "scheduled_us_snapshot_include_x"),
+    )
+    scheduled_us_snapshot_include_options: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "SCHEDULED_US_SNAPSHOT_INCLUDE_OPTIONS",
+            "scheduled_us_snapshot_include_options",
+        ),
+    )
+
     # Sentiment / ML
     finbert_model: str = "ProsusAI/finbert"
     x_tweet_lookback_hours: int = 24

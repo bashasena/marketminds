@@ -302,6 +302,19 @@ export function AdminPage() {
           {local && (
             <p className="text-xs text-slate-500">Browser has a cached copy for date {local.header?.date ?? "—"}.</p>
           )}
+          {ready && !loadErr && fromDb && (fromDb.meta?.data_warnings?.length ?? 0) > 0 ? (
+            <div className="mt-4 rounded-xl border border-amber-900/40 bg-amber-950/20 p-4 text-xs text-amber-100/90">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-amber-200/80">Data notes (saved snapshot)</p>
+              <ul className="mt-2 list-disc space-y-1.5 pl-4 leading-relaxed">
+                {(fromDb.meta?.data_warnings ?? []).map((w, i) => (
+                  <li key={`adm-dw-${i}`}>{w}</li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[11px] text-slate-500">
+                Pipeline warnings from the API (e.g. upstream feeds). The main dashboard no longer shows this block.
+              </p>
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-6 space-y-6">
