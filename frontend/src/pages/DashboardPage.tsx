@@ -1,29 +1,13 @@
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { LiveIndexOptionsStrip } from "../components/dashboard/LiveIndexOptionsStrip";
 import { NewsSection } from "../components/NewsSection";
 import { Card } from "../components/ui/Card";
+import { fmtDelta, fmtIv, fmtNum, pctChip } from "../lib/format";
 import { useMarket } from "../market/MarketContext";
 import { MARKETS } from "../market/types";
 import type { DatabentoOptionsBlock, Snapshot } from "../types";
 import { persistSnapshot, readStoredSnapshot } from "../snapshotStorage";
-
-function fmtNum(n: number | null | undefined, digits = 2) {
-  if (n === null || n === undefined || Number.isNaN(n)) return "—";
-  return n.toLocaleString(undefined, { maximumFractionDigits: digits });
-}
-
-/** Many venues encode IV as decimal (0.22 = 22%). */
-function fmtIv(v: number | null | undefined) {
-  if (v === null || v === undefined || Number.isNaN(v)) return "—";
-  if (v >= 0 && v <= 1) return `${(v * 100).toFixed(1)}%`;
-  if (v > 1 && v <= 100) return `${v.toFixed(1)}%`;
-  return v.toLocaleString(undefined, { maximumFractionDigits: 3 });
-}
-
-function fmtDelta(v: number | null | undefined) {
-  if (v === null || v === undefined || Number.isNaN(v)) return "—";
-  return v.toLocaleString(undefined, { maximumFractionDigits: 3 });
-}
 
 function DatabentoOptionsSection({ block }: { block: DatabentoOptionsBlock }) {
   const cv = block.cleared_volume;
@@ -144,63 +128,8 @@ function DatabentoOptionsSection({ block }: { block: DatabentoOptionsBlock }) {
   );
 }
 
-function pctChip(pct: number | null | undefined) {
-  if (pct === null || pct === undefined) return <span className="text-slate-400">—</span>;
-  const up = pct >= 0;
-  return (
-    <span className={up ? "text-emerald-400" : "text-rose-400"}>
-      {up ? "+" : ""}
-      {pct.toFixed(2)}%
-    </span>
-  );
-}
-
-/** US markets only — avoids saying "add API key" when key is set but data/cache is stale. */
-function usOptionsEmptyFollowUp(data: Snapshot) {
-  const warnings = data.meta?.data_warnings ?? [];
-  const noDatabentoKey = warnings.some((w) => w.includes("set DATABENTO_API_KEY"));
-  const databentoErr = warnings.some((w) => w.startsWith("us_options_databento:"));
-  const hasDetail = Boolean(data.databento_options);
-
-  if (noDatabentoKey) {
-    return (
-      <p className="mt-2 text-xs leading-relaxed text-amber-200/85">
-        US ETF options use Databento OPRA (parent symbology). Add{" "}
-        <span className="text-slate-300">DATABENTO_API_KEY</span> to the <span className="text-slate-300">project root</span> dotenv
-        (next to <span className="text-slate-300">docker-compose.yml</span>), restart the <span className="text-slate-300">api</span> container,
-        then use <span className="text-slate-300">Load live</span> or Admin to refresh the snapshot.
-      </p>
-    );
-  }
-  if (databentoErr) {
-    return (
-      <p className="mt-2 text-xs leading-relaxed text-amber-200/85">
-        Databento could not return options for this build. See <span className="text-slate-300">Data notes</span> above for the error text
-        (subscription, dataset, or date range).
-      </p>
-    );
-  }
-  if (hasDetail) {
-    return (
-      <p className="mt-2 text-xs leading-relaxed text-amber-200/85">
-        OI is still zero for this expiry/session. Check the <span className="text-slate-300">Databento OPRA</span> section below and Data notes;
-        the venue may not have published joinable statistics for that day.
-      </p>
-    );
-  }
-  return (
-    <p className="mt-2 text-xs leading-relaxed text-amber-200/85">
-      This view is missing a <span className="text-slate-300">Databento</span> options block — usually a <span className="text-slate-300">saved</span> or
-      <span className="text-slate-300"> cached</span> snapshot from before the key was wired in. Use <span className="text-slate-300">Load live</span> (or Admin live
-      refresh), run <span className="text-slate-300">docker compose up --build -d</span> so the API matches this repo, then hard-refresh the browser.
-    </p>
-  );
-}
-
 function StickyTopBar() {
   const { market, setMarket } = useMarket();
-  const [searchParams] = useSearchParams();
-  const forceLive = searchParams.get("live") === "1";
   return (
     <div className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95 px-4 py-3 shadow-md shadow-black/20 backdrop-blur">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
@@ -222,13 +151,6 @@ function StickyTopBar() {
             ))}
           </select>
           <Link
-            to={forceLive ? "/" : "/?live=1"}
-            className="shrink-0 rounded-lg border border-slate-600 bg-slate-800/60 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700"
-            title={forceLive ? "Use saved database snapshot (default)" : "Recompute from Yahoo, NSE, etc. (slower)"}
-          >
-            {forceLive ? "Use saved" : "Load live"}
-          </Link>
-          <Link
             to="/admin"
             className="shrink-0 rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
           >
@@ -242,9 +164,7 @@ function StickyTopBar() {
 
 export function DashboardPage() {
   const { market } = useMarket();
-  const [searchParams] = useSearchParams();
-  /** Default: read last saved snapshot from the database. Use `?live=1` to rebuild from Yahoo/NSE/etc. (slower). */
-  const forceLive = searchParams.get("live") === "1";
+  /** Page load uses the saved DB snapshot only (`live=false`). Live upstream polls are isolated to the index/OI strip. */
   const [data, setData] = useState<Snapshot | null>(() => readStoredSnapshot(market));
   const [err, setErr] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -257,17 +177,11 @@ export function DashboardPage() {
     setReady(false);
     (async () => {
       try {
-        const live = forceLive ? "true" : "false";
-        const r = await fetch(
-          `/snapshot/today?market=${encodeURIComponent(market)}&live=${live}`,
-          { cache: "no-store" },
-        );
+        const r = await fetch(`/snapshot/today?market=${encodeURIComponent(market)}&live=false`, { cache: "no-store" });
         if (r.status === 404) {
           if (!readStoredSnapshot(market)) {
             setNeedsAdminRefresh(true);
-            if (!forceLive) {
-              setErr("No saved snapshot in the database yet. Open Admin and run a live refresh, or add ?live=1 to this URL once to build from upstream.");
-            }
+            setErr("No saved snapshot in the database yet. Open Admin and run “Refresh live & save to database”.");
           }
           return;
         }
@@ -289,22 +203,14 @@ export function DashboardPage() {
         setReady(true);
       }
     })();
-  }, [market, forceLive]);
+  }, [market]);
 
   if (data) {
-    const comp = data.composite;
-    const score = comp.score_0_100;
     const ui = data.meta?.ui;
-    const indexTitle = ui?.index_title ?? "Nifty 50";
-    const indexSub = ui?.index_subtitle ?? "Cash index";
-    const breadthSub = ui?.breadth_subtitle ?? "Nifty 50 constituents";
     const moversSub = ui?.movers_subtitle ?? "Nifty 50";
-    const vixLine = ui?.vix_line ?? "India VIX";
     const fiiCardTitle = ui?.fii_title ?? "FII / DII (cash)";
     const showFii = ui?.show_fii_card !== false;
     const globalSub = ui?.global_subtitle ?? "Overnight / cross-asset cues";
-    const meterColor =
-      score >= 62 ? "from-emerald-500/30 to-emerald-400/10" : score <= 42 ? "from-rose-500/30 to-rose-400/10" : "from-amber-500/25 to-amber-400/10";
 
     return (
       <div className="min-h-screen bg-slate-950">
@@ -321,99 +227,20 @@ export function DashboardPage() {
               <span>{data.header.date}</span>
               {data.generated_at_utc ? <span>Generated UTC: {data.generated_at_utc}</span> : null}
             </div>
-            {data.meta?.data_warnings?.length ? (
-              <div className="mt-4 rounded-xl border border-amber-900/40 bg-amber-950/20 p-3 text-xs text-amber-100/90">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-amber-200/80">Data notes</p>
-                <ul className="mt-2 list-disc space-y-1.5 pl-4 leading-relaxed">
-                  {data.meta.data_warnings.map((w, i) => (
-                    <li key={`dw-${i}`}>{w}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            {!forceLive ? (
-              <p className="mt-3 text-xs text-slate-500">
-                Showing the last snapshot saved in the database (including NSE options merged from Admin). Use{" "}
-                <span className="text-slate-300">Load live</span> in the top bar to rebuild from upstream for this view
-                only.
-              </p>
-            ) : (
-              <p className="mt-3 text-xs text-slate-500">
-                Live upstream snapshot. Switch to <span className="text-slate-300">Use saved</span> to read from the
-                database again.
-              </p>
-            )}
+            <p className="mt-3 text-xs text-slate-500">
+              The top section includes <span className="text-slate-300">index, breadth, VIX, options</span>, and{" "}
+              <span className="text-slate-300">composite sentiment</span>. Turn <span className="text-slate-300">Live</span> on there to refresh prices and breadth;
+              composite stays aligned with the saved snapshot unless you run a full refresh from Admin.
+            </p>
           </header>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <Card title={indexTitle} subtitle={indexSub}>
-              <div className="flex items-end justify-between gap-3">
-                <div>
-                  <p className="text-4xl font-semibold tracking-tight text-white">{fmtNum(data.index.close, 2)}</p>
-                  <p className="mt-2 text-sm text-slate-300">{pctChip(data.index.pct_change)} day</p>
-                </div>
-                <div className="text-right text-xs text-slate-400">
-                  <div>O {fmtNum(data.index.open)}</div>
-                  <div>H {fmtNum(data.index.high)}</div>
-                  <div>L {fmtNum(data.index.low)}</div>
-                </div>
-              </div>
-              <p className="mt-4 text-sm leading-relaxed text-slate-300">{data.index.narrative}</p>
-            </Card>
-
-            <Card title="Composite sentiment" subtitle="0–100 (Bearish → Bullish)">
-              <div className={`rounded-xl border border-slate-800 bg-gradient-to-br ${meterColor} p-4`}>
-                <div className="flex items-center justify-between">
-                  <p className="text-5xl font-semibold text-white">{fmtNum(score, 1)}</p>
-                  <span className="rounded-full border border-slate-700 bg-slate-950/40 px-3 py-1 text-xs font-medium text-slate-200">
-                    {comp.label}
-                  </span>
-                </div>
-                <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-900">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-rose-500 via-amber-400 to-emerald-400"
-                    style={{ width: `${Math.min(100, Math.max(0, score))}%` }}
-                  />
-                </div>
-                <p className="mt-3 text-sm text-slate-200/90">{comp.explanation}</p>
-                <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-400">
-                  {Object.entries(comp.components).map(([k, v]) => (
-                    <div key={k} className="flex justify-between rounded-lg bg-slate-950/40 px-2 py-1">
-                      <span className="capitalize">{k}</span>
-                      <span className="text-slate-200">{v.toFixed(1)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </Card>
-
-            <Card title="Market breadth" subtitle={breadthSub}>
-              <div className="grid grid-cols-3 gap-3 text-center">
-                <div className="rounded-xl bg-emerald-950/30 p-3">
-                  <p className="text-xs text-emerald-200/70">Advances</p>
-                  <p className="text-2xl font-semibold text-emerald-200">{data.breadth.advances}</p>
-                </div>
-                <div className="rounded-xl bg-rose-950/30 p-3">
-                  <p className="text-xs text-rose-200/70">Declines</p>
-                  <p className="text-2xl font-semibold text-rose-200">{data.breadth.declines}</p>
-                </div>
-                <div className="rounded-xl bg-slate-800/60 p-3">
-                  <p className="text-xs text-slate-400">Unch.</p>
-                  <p className="text-2xl font-semibold text-slate-200">{data.breadth.unchanged}</p>
-                </div>
-              </div>
-              <p className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                <span>
-                  {vixLine}: {fmtNum(data.vix.level, 2)}
-                </span>
-                {data.vix.pct_change !== null ? <span className="text-slate-300">({pctChip(data.vix.pct_change)} day)</span> : null}
-              </p>
-            </Card>
+          <div className="mb-4">
+            <LiveIndexOptionsStrip market={market} base={data} />
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card title="Technical levels" subtitle="Classic pivot (prior session)">
-              <div className="overflow-hidden rounded-xl border border-slate-800/80 bg-gradient-to-b from-emerald-950/70 via-slate-900/40 to-rose-950/70 text-xs">
+              <div className="overflow-hidden rounded-xl border border-slate-700/50 bg-gradient-to-b from-teal-950/95 via-zinc-950/90 to-red-950/95 text-xs shadow-inner shadow-black/20">
                 {(
                   [
                     ["S2", data.technical.s2],
@@ -426,21 +253,27 @@ export function DashboardPage() {
                   <div
                     key={String(k)}
                     className={`flex items-center justify-between gap-3 px-3 py-2.5 ${
-                      i < arr.length - 1 ? "border-b border-slate-700/40" : ""
+                      i < arr.length - 1 ? "border-b border-white/[0.06]" : ""
                     }`}
                   >
                     <span
                       className={
                         i <= 1
-                          ? "font-medium text-emerald-200/90"
+                          ? "font-medium text-teal-400"
                           : i >= 3
-                            ? "font-medium text-rose-200/90"
-                            : "font-medium text-amber-100/80"
+                            ? "font-medium text-red-400"
+                            : "font-medium text-amber-300"
                       }
                     >
                       {k}
                     </span>
-                    <span className="text-sm font-semibold tabular-nums text-slate-50">{fmtNum(v as number | null, 2)}</span>
+                    <span
+                      className={`text-sm font-semibold tabular-nums ${
+                        i <= 1 ? "text-teal-100" : i >= 3 ? "text-red-100" : "text-amber-50"
+                      }`}
+                    >
+                      {fmtNum(v as number | null, 2)}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -462,51 +295,6 @@ export function DashboardPage() {
                 <p className="mt-3 text-sm text-slate-300">{data.fii_dii.note}</p>
               </Card>
             ) : null}
-
-            <Card title="Options positioning" subtitle={`${data.options.symbol}${data.options.expiry ? ` · ${data.options.expiry}` : ""}`}>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-                  <p className="text-xs text-slate-500">PCR (OI)</p>
-                  <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.options.pcr_oi, 3)}</p>
-                </div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-                  <p className="text-xs text-slate-500">Total call OI</p>
-                  <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.options.call_oi_total, 0)}</p>
-                </div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
-                  <p className="text-xs text-slate-500">Total put OI</p>
-                  <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.options.put_oi_total, 0)}</p>
-                </div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3 md:col-span-1">
-                  <p className="text-xs text-slate-500">Put OI wall (support)</p>
-                  <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.options.support_strike_put_oi, 0)}</p>
-                  {data.options.put_wall_oi != null && data.options.put_wall_oi > 0 ? (
-                    <p className="mt-0.5 text-xs text-slate-500">Max OI: {fmtNum(data.options.put_wall_oi, 0)}</p>
-                  ) : null}
-                </div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3 md:col-span-1">
-                  <p className="text-xs text-slate-500">Call OI wall (resistance)</p>
-                  <p className="mt-1 text-xl font-semibold text-white">{fmtNum(data.options.resistance_strike_call_oi, 0)}</p>
-                  {data.options.call_wall_oi != null && data.options.call_wall_oi > 0 ? (
-                    <p className="mt-0.5 text-xs text-slate-500">Max OI: {fmtNum(data.options.call_wall_oi, 0)}</p>
-                  ) : null}
-                </div>
-              </div>
-              <p className="mt-3 text-sm text-slate-300">{data.options.note}</p>
-              {data.options.pcr_oi == null &&
-              data.options.call_oi_total === 0 &&
-              data.options.put_oi_total === 0 ? (
-                data.meta?.market_id === "us_broad" || data.meta?.market_id === "usa_nasdaq" ? (
-                  usOptionsEmptyFollowUp(data)
-                ) : (
-                  <p className="mt-2 text-xs leading-relaxed text-amber-200/85">
-                    If this never populates, the backend likely got an empty response from NSE (common when the server
-                    runs outside India or NSE blocks automated access). Check the amber notice under the page title, or
-                    run the stack from a network that can open the NSE option chain in a browser.
-                  </p>
-                )
-              ) : null}
-            </Card>
 
             {data.databento_options ? (
               <div className="lg:col-span-2">

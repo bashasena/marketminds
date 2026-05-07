@@ -1,0 +1,13 @@
+{
+  "name": "HeatMap Dashboard",
+  "description": "Market Snapshot API + React dashboard",
+  "stack": "heroku-24",
+  "buildpacks": [
+    { "url": "heroku/nodejs" },
+    { "url": "heroku/python" }
+  ],
+  "env": {
+    "DISABLE_FINBERT": "1",
+    "NODE_ENV": "production"
+  }
+}

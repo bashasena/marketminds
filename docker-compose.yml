@@ -29,6 +29,11 @@ services:
       SNAPSHOT_CRON_HOUR: ${SNAPSHOT_CRON_HOUR:-16}
       SNAPSHOT_CRON_MINUTE: ${SNAPSHOT_CRON_MINUTE:-0}
       INTRADAY_REFRESH_MINUTES: ${INTRADAY_REFRESH_MINUTES:-0}
+      # Scheduled cron/intraday jobs only — Admin “full refresh” always hits upstream (see snapshot_job.full=True).
+      SCHEDULED_SNAPSHOT_INCLUDE_X: ${SCHEDULED_SNAPSHOT_INCLUDE_X:-0}
+      SCHEDULED_SNAPSHOT_INCLUDE_NSE_OPTIONS: ${SCHEDULED_SNAPSHOT_INCLUDE_NSE_OPTIONS:-0}
+      SCHEDULED_US_SNAPSHOT_INCLUDE_X: ${SCHEDULED_US_SNAPSHOT_INCLUDE_X:-0}
+      SCHEDULED_US_SNAPSHOT_INCLUDE_OPTIONS: ${SCHEDULED_US_SNAPSHOT_INCLUDE_OPTIONS:-0}
       # Set in root `.env` for production (e.g. https://tradersmind.bashasena.com). Hardcoding here would ignore .env.
       API_CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:5173,http://localhost:8080}
       DISABLE_FINBERT: 1

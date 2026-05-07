@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.repositories.snapshot_repo import upsert_daily_snapshot, upsert_fii_dii_flow
+from app.repositories.snapshot_repo import get_latest_snapshot, upsert_daily_snapshot, upsert_fii_dii_flow
 from app.services.market_snapshot import build_snapshot
 from app.services.us_market_snapshot import build_us_snapshot
 from app.services.us_nasdaq_market_snapshot import build_us_nasdaq_snapshot
@@ -17,14 +17,63 @@ logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 
 
-def run_snapshot_pipeline(persist: bool = True, market: str = "in_nifty") -> dict:
+def run_snapshot_pipeline(persist: bool = True, market: str = "in_nifty", full: bool = False) -> dict:
+    """Scheduled jobs use ``full=False`` and honor SCHEDULED_* env toggles. Admin / hooks use ``full=True`` for a complete upstream build."""
     settings = get_settings()
-    if market == "us_broad":
-        payload = build_us_snapshot(settings)
-    elif market == "usa_nasdaq":
-        payload = build_us_nasdaq_snapshot(settings)
+    db = SessionLocal()
+    try:
+        row = get_latest_snapshot(db, market)
+    finally:
+        db.close()
+    stored = row.payload if row else {}
+    stored_opts = stored.get("options")
+    stored_x = stored.get("x_sentiment_summary")
+    stored_dbento = stored.get("databento_options")
+
+    if full:
+        ix = inse = uopt = True
     else:
-        payload = build_snapshot(settings)
+        if market == "in_nifty":
+            ix = settings.scheduled_snapshot_include_x
+            inse = settings.scheduled_snapshot_include_nse_options
+            uopt = True
+        elif market == "us_broad":
+            ix = settings.scheduled_us_snapshot_include_x
+            uopt = settings.scheduled_us_snapshot_include_options
+            inse = True
+        elif market == "usa_nasdaq":
+            ix = settings.scheduled_us_snapshot_include_x
+            uopt = settings.scheduled_us_snapshot_include_options
+            inse = True
+        else:
+            ix = inse = uopt = True
+
+    if market == "us_broad":
+        payload = build_us_snapshot(
+            settings,
+            include_x=ix,
+            include_us_options=uopt,
+            stored_options=stored_opts if not uopt else None,
+            stored_databento_options=stored_dbento if not uopt else None,
+            stored_x_summary=stored_x if not ix else None,
+        )
+    elif market == "usa_nasdaq":
+        payload = build_us_nasdaq_snapshot(
+            settings,
+            include_x=ix,
+            include_us_options=uopt,
+            stored_options=stored_opts if not uopt else None,
+            stored_databento_options=stored_dbento if not uopt else None,
+            stored_x_summary=stored_x if not ix else None,
+        )
+    else:
+        payload = build_snapshot(
+            settings,
+            include_x=ix,
+            include_nse_options=inse,
+            stored_options=stored_opts if not inse else None,
+            stored_x_summary=stored_x if not ix else None,
+        )
     snap_date = date.fromisoformat(str(payload["snapshot_date"]))
     comp = payload.get("composite", {}).get("score_0_100")
     nifty_close = payload.get("index", {}).get("close")

@@ -1,0 +1,10 @@
+{
+  "name": "heatmap-dashboard",
+  "private": true,
+  "engines": {
+    "node": "20.x"
+  },
+  "scripts": {
+    "heroku-postbuild": "cd frontend && npm ci && npm run build && rm -rf ../backend/static_ui && mkdir -p ../backend/static_ui && cp -r dist/. ../backend/static_ui/"
+  }
+}

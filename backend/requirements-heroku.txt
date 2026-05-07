@@ -1,0 +1,18 @@
+# Slim deps for Heroku (slug size). FinBERT uses lexical fallback — set DISABLE_FINBERT=1.
+# Full stack with PyTorch: use backend/requirements.txt in Docker instead.
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+gunicorn==23.0.0
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.9
+alembic==1.14.0
+pydantic==2.10.3
+pydantic-settings==2.6.1
+httpx==0.28.1
+yfinance==0.2.40
+pandas>=2.1,<2.3
+numpy>=1.26,<2.1
+apscheduler==3.10.4
+python-dotenv==1.0.1
+tenacity==9.0.0
+databento>=0.35,<1
