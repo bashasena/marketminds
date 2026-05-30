@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { DashboardTopBar } from "../components/DashboardTopBar";
 import { LiveIndexOptionsStrip } from "../components/dashboard/LiveIndexOptionsStrip";
 import { NewsSection } from "../components/NewsSection";
 import { Card } from "../components/ui/Card";
 import { fmtDelta, fmtIv, fmtNum, pctChip } from "../lib/format";
 import { useMarket } from "../market/MarketContext";
-import { MARKETS } from "../market/types";
 import type { DatabentoOptionsBlock, Snapshot } from "../types";
 import { persistSnapshot, readStoredSnapshot } from "../snapshotStorage";
 
@@ -128,40 +128,6 @@ function DatabentoOptionsSection({ block }: { block: DatabentoOptionsBlock }) {
   );
 }
 
-function StickyTopBar() {
-  const { market, setMarket } = useMarket();
-  return (
-    <div className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95 px-4 py-3 shadow-md shadow-black/20 backdrop-blur">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
-        <p className="min-w-0 text-xs font-medium uppercase tracking-widest text-slate-400">Daily market snapshot</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="sr-only" htmlFor="market-select">
-            Market
-          </label>
-          <select
-            id="market-select"
-            value={market}
-            onChange={(e) => setMarket(e.target.value as typeof market)}
-            className="max-w-[min(100%,220px)] rounded-lg border border-slate-600 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-          >
-            {MARKETS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-          <Link
-            to="/admin"
-            className="shrink-0 rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-1.5 text-xs font-medium text-slate-100 hover:bg-slate-700"
-          >
-            Admin
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function DashboardPage() {
   const { market } = useMarket();
   /** Page load uses the saved DB snapshot only (`live=false`). Live upstream polls are isolated to the index/OI strip. */
@@ -214,7 +180,7 @@ export function DashboardPage() {
 
     return (
       <div className="min-h-screen bg-slate-950">
-        <StickyTopBar />
+        <DashboardTopBar />
         <div className="mx-auto max-w-6xl px-4 py-10 pb-16">
           {err ? (
             <div className="mb-6 rounded-xl border border-amber-900/50 bg-amber-950/25 p-4 text-sm text-amber-100/90">
@@ -370,7 +336,7 @@ export function DashboardPage() {
   if (!ready) {
     return (
       <div className="min-h-screen bg-slate-950">
-        <StickyTopBar />
+        <DashboardTopBar />
         <div className="mx-auto max-w-6xl px-4 py-6 pb-10">
           <NewsSection market={market} />
         </div>
@@ -381,7 +347,7 @@ export function DashboardPage() {
   if (err) {
     return (
       <div className="min-h-screen bg-slate-950">
-        <StickyTopBar />
+        <DashboardTopBar />
         <div className="mx-auto max-w-6xl px-4 py-6 pb-16">
           <div className="mb-6">
             <NewsSection market={market} />
@@ -405,7 +371,7 @@ export function DashboardPage() {
   if (needsAdminRefresh) {
     return (
       <div className="min-h-screen bg-slate-950">
-        <StickyTopBar />
+        <DashboardTopBar />
         <div className="mx-auto max-w-6xl px-4 py-6 pb-16">
           <div className="mb-8">
             <NewsSection market={market} />
@@ -429,7 +395,7 @@ export function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-slate-950">
-      <StickyTopBar />
+      <DashboardTopBar />
       <div className="mx-auto max-w-6xl px-4 py-6">
         <NewsSection market={market} />
         <p className="mt-6 text-center text-sm text-slate-500">Something went wrong.</p>

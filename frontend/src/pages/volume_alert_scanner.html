@@ -1,0 +1,239 @@
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --font:'IBM Plex Sans',sans-serif;
+    --mono:'IBM Plex Mono',monospace;
+    --green:#00c896;--green-dim:rgba(0,200,150,0.12);--green-border:rgba(0,200,150,0.3);
+    --red:#ff4f4f;--red-dim:rgba(255,79,79,0.1);
+    --amber:#f5a623;--amber-dim:rgba(245,166,35,0.1);
+    --blue:#4a9eff;--blue-dim:rgba(74,158,255,0.1);
+    --bg:var(--color-background-primary);
+    --surface:var(--color-background-secondary);
+    --border:var(--color-border-tertiary);
+    --text:var(--color-text-primary);
+    --muted:var(--color-text-secondary);
+  }
+  body{font-family:var(--font);background:transparent;color:var(--text)}
+  .wrapper{padding:1rem 0}
+  .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;gap:12px;flex-wrap:wrap}
+  .title-group{display:flex;align-items:center;gap:10px}
+  .pulse-dot{width:10px;height:10px;border-radius:50%;background:var(--green);animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(0,200,150,0.5)}50%{box-shadow:0 0 0 5px rgba(0,200,150,0)}}
+  h2{font-size:17px;font-weight:500;letter-spacing:-0.02em}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .controls select,.controls input{font-family:var(--font);font-size:13px;padding:6px 10px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--surface);color:var(--text);outline:none}
+  .scan-btn{font-family:var(--font);font-size:13px;font-weight:500;padding:7px 16px;border:0.5px solid var(--green-border);border-radius:6px;background:var(--green-dim);color:var(--green);cursor:pointer;transition:all .15s}
+  .scan-btn:hover{background:rgba(0,200,150,0.2)}
+  .scan-btn:active{transform:scale(0.97)}
+  .metrics-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:1.5rem}
+  .metric-card{background:var(--surface);border-radius:8px;padding:12px 14px;border:0.5px solid var(--border)}
+  .metric-label{font-size:12px;color:var(--muted);margin-bottom:4px}
+  .metric-val{font-size:22px;font-weight:500;font-family:var(--mono)}
+  .metric-val.green{color:var(--green)}
+  .metric-val.amber{color:var(--amber)}
+  .metric-val.red{color:var(--red)}
+  .section-label{font-size:12px;font-weight:500;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px}
+  .alert-list{display:flex;flex-direction:column;gap:8px;margin-bottom:1.5rem}
+  .alert-row{display:grid;grid-template-columns:70px 1fr 90px 90px 90px 90px;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;border:0.5px solid var(--border);background:var(--bg);transition:background .15s;animation:slideIn .25s ease forwards;opacity:0}
+  @keyframes slideIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+  .alert-row.bullish{border-left:3px solid var(--green);border-radius:0 8px 8px 0}
+  .alert-row.bearish{border-left:3px solid var(--red);border-radius:0 8px 8px 0}
+  .alert-row.neutral{border-left:3px solid var(--amber);border-radius:0 8px 8px 0}
+  .ticker{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--text)}
+  .vol-bar-wrap{display:flex;flex-direction:column;gap:3px}
+  .vol-bar-track{height:6px;background:rgba(128,128,128,0.15);border-radius:3px;overflow:hidden}
+  .vol-bar-fill{height:100%;border-radius:3px;transition:width .6s ease}
+  .vol-text{font-size:11px;color:var(--muted);font-family:var(--mono)}
+  .pcr-badge{font-family:var(--mono);font-size:13px;font-weight:500;padding:4px 8px;border-radius:5px;text-align:center}
+  .pcr-badge.bull{background:var(--green-dim);color:var(--green)}
+  .pcr-badge.bear{background:var(--red-dim);color:var(--red)}
+  .pcr-badge.neut{background:var(--amber-dim);color:var(--amber)}
+  .ratio-badge{font-family:var(--mono);font-size:13px;font-weight:600;text-align:center}
+  .ratio-badge.high{color:var(--green)}
+  .ratio-badge.med{color:var(--amber)}
+  .signal-pill{font-size:11px;font-weight:500;padding:3px 8px;border-radius:20px;text-align:center}
+  .signal-pill.bullish{background:var(--green-dim);color:var(--green)}
+  .signal-pill.bearish{background:var(--red-dim);color:var(--red)}
+  .signal-pill.neutral{background:var(--amber-dim);color:var(--amber)}
+  .table-header{display:grid;grid-template-columns:70px 1fr 90px 90px 90px 90px;gap:10px;padding:4px 14px;margin-bottom:4px}
+  .col-h{font-size:11px;color:var(--muted);font-weight:500}
+  .empty-state{text-align:center;padding:2rem;color:var(--muted);font-size:14px;border:0.5px dashed var(--border);border-radius:8px}
+  .alert-log{background:var(--surface);border-radius:8px;border:0.5px solid var(--border);padding:12px 14px;max-height:140px;overflow-y:auto}
+  .log-entry{font-size:12px;font-family:var(--mono);color:var(--muted);padding:3px 0;border-bottom:0.5px solid var(--border)}
+  .log-entry:last-child{border-bottom:none}
+  .log-time{color:var(--green);margin-right:8px}
+  .threshold-row{display:flex;align-items:center;gap:10px;margin-bottom:1.5rem;flex-wrap:wrap}
+  .threshold-row label{font-size:13px;color:var(--muted)}
+  .thresh-val{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--green);min-width:32px}
+  input[type=range]{width:140px}
+</style>
+
+<div class="wrapper">
+  <h2 class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden">Volume surge scanner — alerts when current day volume exceeds 30-day average with PCR signal</h2>
+
+  <div class="header">
+    <div class="title-group">
+      <div class="pulse-dot" id="statusDot"></div>
+      <h2>Volume Surge Scanner</h2>
+    </div>
+    <div class="controls">
+      <select id="marketSel">
+        <option value="nse">NSE (Nifty 50)</option>
+        <option value="nasdaq">NASDAQ 100</option>
+        <option value="both">Both Markets</option>
+      </select>
+      <button class="scan-btn" onclick="runScan()"><i class="ti ti-refresh" aria-hidden="true"></i> Scan Now</button>
+    </div>
+  </div>
+
+  <div class="threshold-row">
+    <label>Volume threshold:</label>
+    <input type="range" min="1.0" max="5.0" step="0.1" value="1.5" id="threshSlider" oninput="document.getElementById('threshVal').textContent=parseFloat(this.value).toFixed(1)+'x'">
+    <span class="thresh-val" id="threshVal">1.5x</span>
+    <label style="margin-left:12px">Min PCR filter:</label>
+    <input type="range" min="0.5" max="2.0" step="0.1" value="0.7" id="pcrSlider" oninput="document.getElementById('pcrVal').textContent=parseFloat(this.value).toFixed(1)">
+    <span class="thresh-val" id="pcrVal">0.7</span>
+  </div>
+
+  <div class="metrics-row">
+    <div class="metric-card"><div class="metric-label">Stocks Scanned</div><div class="metric-val" id="mScanned">—</div></div>
+    <div class="metric-card"><div class="metric-label">Alerts Fired</div><div class="metric-val green" id="mAlerts">—</div></div>
+    <div class="metric-card"><div class="metric-label">Bullish Signals</div><div class="metric-val green" id="mBull">—</div></div>
+    <div class="metric-card"><div class="metric-label">Bearish Signals</div><div class="metric-val red" id="mBear">—</div></div>
+    <div class="metric-card"><div class="metric-label">Last Scan</div><div class="metric-val" id="mTime" style="font-size:14px">—</div></div>
+  </div>
+
+  <div class="section-label">Alert Results</div>
+  <div class="table-header">
+    <span class="col-h">SYMBOL</span>
+    <span class="col-h">VOLUME vs 30D AVG</span>
+    <span class="col-h">PCR</span>
+    <span class="col-h">VOL RATIO</span>
+    <span class="col-h">OI TREND</span>
+    <span class="col-h">SIGNAL</span>
+  </div>
+  <div class="alert-list" id="alertList"><div class="empty-state"><i class="ti ti-radar" aria-hidden="true" style="font-size:24px;display:block;margin-bottom:8px"></i>Run a scan to detect volume surges</div></div>
+
+  <div class="section-label" style="margin-top:1.5rem">Activity Log</div>
+  <div class="alert-log" id="alertLog"><div class="log-entry" style="color:var(--muted)">Waiting for scan...</div></div>
+</div>
+
+<script>
+const NSE_STOCKS = [
+  {sym:'RELIANCE',name:'Reliance Industries'},{sym:'TCS',name:'Tata Consultancy'},{sym:'HDFCBANK',name:'HDFC Bank'},
+  {sym:'INFY',name:'Infosys'},{sym:'ICICIBANK',name:'ICICI Bank'},{sym:'HINDUNILVR',name:'HUL'},
+  {sym:'ITC',name:'ITC Ltd'},{sym:'KOTAKBANK',name:'Kotak Mahindra'},{sym:'LT',name:'L&T'},
+  {sym:'AXISBANK',name:'Axis Bank'},{sym:'BAJFINANCE',name:'Bajaj Finance'},{sym:'WIPRO',name:'Wipro'},
+  {sym:'SBIN',name:'SBI'},{sym:'MARUTI',name:'Maruti Suzuki'},{sym:'TITAN',name:'Titan'},
+  {sym:'ASIANPAINT',name:'Asian Paints'},{sym:'SUNPHARMA',name:'Sun Pharma'},{sym:'NTPC',name:'NTPC'},
+  {sym:'POWERGRID',name:'Power Grid'},{sym:'ADANIENT',name:'Adani Enterprises'}
+];
+const NASDAQ_STOCKS = [
+  {sym:'AAPL',name:'Apple'},{sym:'MSFT',name:'Microsoft'},{sym:'NVDA',name:'NVIDIA'},
+  {sym:'AMZN',name:'Amazon'},{sym:'META',name:'Meta'},{sym:'GOOGL',name:'Alphabet'},
+  {sym:'TSLA',name:'Tesla'},{sym:'AVGO',name:'Broadcom'},{sym:'COST',name:'Costco'},
+  {sym:'NFLX',name:'Netflix'},{sym:'AMD',name:'AMD'},{sym:'ADBE',name:'Adobe'},
+  {sym:'QCOM',name:'Qualcomm'},{sym:'INTC',name:'Intel'},{sym:'CSCO',name:'Cisco'}
+];
+
+function rnd(min,max){return Math.random()*(max-min)+min}
+function fmt(n){if(n>=1e9)return (n/1e9).toFixed(2)+'B';if(n>=1e6)return (n/1e6).toFixed(1)+'M';if(n>=1e3)return (n/1e3).toFixed(0)+'K';return n.toString()}
+
+function generateStockData(stock){
+  const avg30 = Math.round(rnd(2e6,80e6));
+  const volRatio = rnd(0.6,5.5);
+  const curVol = Math.round(avg30*volRatio);
+  const pcr = parseFloat(rnd(0.4,2.2).toFixed(2));
+  const oiTrend = ['Rising','Falling','Flat'][Math.floor(rnd(0,3))];
+  let signal='neutral';
+  if(pcr<0.8&&volRatio>1.5)signal='bullish';
+  else if(pcr>1.3&&volRatio>1.5)signal='bearish';
+  return{...stock,avg30,curVol,volRatio:parseFloat(volRatio.toFixed(2)),pcr,oiTrend,signal};
+}
+
+function log(msg,type='info'){
+  const el=document.getElementById('alertLog');
+  const now=new Date();
+  const t=now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0');
+  const colors={info:'var(--muted)',alert:'var(--green)',warn:'var(--amber)'};
+  const div=document.createElement('div');
+  div.className='log-entry';
+  div.innerHTML=`<span class="log-time">${t}</span><span style="color:${colors[type]}">${msg}</span>`;
+  if(el.firstChild&&el.firstChild.textContent==='Waiting for scan...')el.innerHTML='';
+  el.insertBefore(div,el.firstChild);
+  if(el.children.length>40)el.removeChild(el.lastChild);
+}
+
+function runScan(){
+  const market=document.getElementById('marketSel').value;
+  const thresh=parseFloat(document.getElementById('threshSlider').value);
+  const pcrMin=parseFloat(document.getElementById('pcrSlider').value);
+  const dot=document.getElementById('statusDot');
+  dot.style.background='var(--amber)';
+  document.getElementById('alertList').innerHTML='<div class="empty-state"><i class="ti ti-loader" aria-hidden="true" style="font-size:20px;display:block;margin-bottom:6px;animation:spin 1s linear infinite"></i>Scanning...</div>';
+  log(`Scan started — market: ${market.toUpperCase()}, threshold: ${thresh}x`,'info');
+
+  let pool=[];
+  if(market==='nse'||market==='both')pool=[...pool,...NSE_STOCKS];
+  if(market==='nasdaq'||market==='both')pool=[...pool,...NASDAQ_STOCKS];
+
+  setTimeout(()=>{
+    const all=pool.map(generateStockData);
+    const alerts=all.filter(s=>s.volRatio>=thresh&&s.pcr>=pcrMin);
+    alerts.sort((a,b)=>b.volRatio-a.volRatio);
+
+    const bull=alerts.filter(s=>s.signal==='bullish').length;
+    const bear=alerts.filter(s=>s.signal==='bearish').length;
+    const now=new Date();
+    const tStr=now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0');
+
+    document.getElementById('mScanned').textContent=all.length;
+    document.getElementById('mAlerts').textContent=alerts.length;
+    document.getElementById('mBull').textContent=bull;
+    document.getElementById('mBear').textContent=bear;
+    document.getElementById('mTime').textContent=tStr;
+    dot.style.background='var(--green)';
+
+    log(`Scan complete — ${all.length} scanned, ${alerts.length} alerts fired`,'alert');
+    alerts.forEach(s=>log(`ALERT: ${s.sym} — Vol ${s.volRatio}x avg | PCR ${s.pcr} | ${s.signal.toUpperCase()}`,'warn'));
+
+    const list=document.getElementById('alertList');
+    if(alerts.length===0){
+      list.innerHTML=`<div class="empty-state"><i class="ti ti-check" aria-hidden="true" style="font-size:20px;display:block;margin-bottom:6px"></i>No stocks exceed ${thresh}x volume threshold right now</div>`;
+      return;
+    }
+    list.innerHTML='';
+    alerts.forEach((s,i)=>{
+      const pct=Math.min(Math.round((s.curVol/s.avg30)*100),400);
+      const barColor=s.signal==='bullish'?'var(--green)':s.signal==='bearish'?'var(--red)':'var(--amber)';
+      const pcrClass=s.pcr<0.8?'bull':s.pcr>1.3?'bear':'neut';
+      const pcrLabel=s.pcr<0.8?'Bullish':s.pcr>1.3?'Bearish':'Neutral';
+      const ratioClass=s.volRatio>=2.5?'high':'med';
+      const oiColor=s.oiTrend==='Rising'?'var(--green)':s.oiTrend==='Falling'?'var(--red)':'var(--muted)';
+      const row=document.createElement('div');
+      row.className=`alert-row ${s.signal}`;
+      row.style.animationDelay=(i*0.06)+'s';
+      row.innerHTML=`
+        <span class="ticker">${s.sym}</span>
+        <div class="vol-bar-wrap">
+          <div class="vol-bar-track"><div class="vol-bar-fill" style="width:${Math.min(pct/4,100)}%;background:${barColor}"></div></div>
+          <span class="vol-text">${fmt(s.curVol)} / avg ${fmt(s.avg30)}</span>
+        </div>
+        <span class="pcr-badge ${pcrClass}">${s.pcr}<br><span style="font-size:10px;opacity:.7">${pcrLabel}</span></span>
+        <span class="ratio-badge ${ratioClass}">${s.volRatio}x</span>
+        <span style="font-size:12px;color:${oiColor};text-align:center;font-weight:500">${s.oiTrend}</span>
+        <span class="signal-pill ${s.signal}">${s.signal.charAt(0).toUpperCase()+s.signal.slice(1)}</span>
+      `;
+      list.appendChild(row);
+    });
+  },900);
+}
+
+const style=document.createElement('style');
+style.textContent='@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
+document.head.appendChild(style);
+
+runScan();
+</script>
