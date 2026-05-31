@@ -12,6 +12,7 @@ export default defineConfig({
       "/news": { target: "http://localhost:8000", changeOrigin: true },
       "/x": { target: "http://localhost:8000", changeOrigin: true },
       "^/volume/": { target: "http://localhost:8000", changeOrigin: true },
+      "/admin/settings": { target: "http://localhost:8000", changeOrigin: true },
     },
   },
 });
