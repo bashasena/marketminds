@@ -94,13 +94,133 @@ First FinBERT download can take time and disk; set `DISABLE_FINBERT=1` for a lig
 
 NSE and Yahoo/X availability can change; this stack is intended as a **professional-style template** you can harden (broker feeds, retries, auth secrets manager, etc.).
 
+## Environment variables
+
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | Postgres DSN (set automatically in Compose for `api`) |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token from `@BotFather` — powers volume alert notifications |
+| `TELEGRAM_CHAT_ID` | Telegram channel/chat ID to send alerts to (e.g. `-1003949912386`) |
+| `XBEARER_TOKEN` | X API v2 Bearer token for List tweets |
+| `X_LIST_ID` | Numeric List ID of curated traders |
+| `SNAPSHOT_CRON_HOUR`, `SNAPSHOT_CRON_MINUTE` | IST time for daily persisted snapshot (default 16:00) |
+| `INTRADAY_REFRESH_MINUTES` | If > 0, persist snapshots on that interval |
+| `DISABLE_FINBERT` | `1` skips `transformers` model load; uses lexical fallback |
+| `API_CORS_ORIGINS` | Comma-separated origins for browser calls to API |
+| `YFIN_*` | Optional overrides for yfinance symbols (see `app/config.py`) |
+
+---
+
+## 🚀 Production — Hostinger VPS
+
+**Live app:** https://tradersmind.bashasena.com
+**Volume Scanner:** https://tradersmind.bashasena.com/volume-strategy
+**Telegram alerts channel:** https://t.me/trader_mind_alert
+
+### Server details
+
+| Item | Value |
+|------|-------|
+| Provider | Hostinger VPS |
+| OS | Ubuntu 24.04 LTS |
+| IP | `2.24.65.223` |
+| Domain | `tradersmind.bashasena.com` |
+| Reverse proxy | Caddy (auto HTTPS via Let's Encrypt) |
+| App path | `/root/marketminds` |
+
+### SSH access
+
+```bash
+ssh root@2.24.65.223
+```
+
+### Deploy / update after a git push
+
+```bash
+ssh root@2.24.65.223
+cd ~/marketminds
+git pull
+docker compose up -d --build
+docker compose ps
+```
+
+### Verify everything is running
+
+```bash
+docker compose ps                        # all 3 containers Up
+curl -sI http://127.0.0.1:8080           # 200 from nginx
+curl -s http://127.0.0.1:8000/health     # {"status":"ok"}
+curl -s http://127.0.0.1:8000/volume/alerts  # watchlist JSON
+```
+
+### Environment file on server
+
+The `.env` file lives at `/root/marketminds/.env` (not committed to git). It must contain:
+
+```env
+TELEGRAM_BOT_TOKEN=<bot token>
+TELEGRAM_CHAT_ID=-1003949912386
+API_CORS_ORIGINS=https://tradersmind.bashasena.com,http://localhost:5173,http://localhost:8080
+```
+
+After editing `.env`, restart only the API container (no rebuild needed):
+
+```bash
+docker compose up -d --force-recreate api
+```
+
+### Useful commands
+
+```bash
+# View live API logs
+docker compose logs -f api
+
+# View nginx logs
+docker compose logs -f web
+
+# Restart a single service
+docker compose restart api
+
+# Full rebuild (after Dockerfile or dependency changes)
+docker compose up -d --build
+
+# Stop everything
+docker compose down
+
+# Stop and wipe database (⚠️ destructive)
+docker compose down -v
+```
+
+### Caddy config (HTTPS reverse proxy — on host OS, not Docker)
+
+```
+/etc/caddy/Caddyfile
+```
+```caddy
+tradersmind.bashasena.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+```bash
+systemctl status caddy          # check Caddy is running
+systemctl restart caddy         # restart after config change
+```
+
+### Full deployment guide
+
+For first-time VPS setup (DNS, firewall, Caddy install, CORS troubleshooting):
+**[docs/deployment-full-guide.md](docs/deployment-full-guide.md)**
+
+---
+
 ## Deployment notes
 
-- **Production deploy (Hostinger VPS, subdomain, HTTPS, firewall, CORS, troubleshooting):** **[docs/deployment-full-guide.md](docs/deployment-full-guide.md)** — shorter checklist: **[docs/deployment-hostinger-vps.md](docs/deployment-hostinger-vps.md)**.
-- Run **migrations** before or on boot (`backend/Dockerfile` runs `alembic upgrade head`).
-- Put secrets in the orchestrator (K8s Secrets, ECS parameters), not in the image.
-- For production CORS, set `API_CORS_ORIGINS` to your real UI origin(s).
-- Consider moving the X + FinBERT job to a **worker** if API latency becomes an issue.
+- Run **migrations** before or on boot (`backend/Dockerfile` runs `alembic upgrade head` automatically).
+- Put secrets in `.env` on the server — never commit them to git.
+- For production CORS, `API_CORS_ORIGINS` must include your public domain.
+- Consider moving X + FinBERT job to a **worker** if API latency becomes an issue.
+- **Telegram AlertManager** runs as a background thread inside the API container — polling every 5 min; restarts automatically with the container.
 
 ## License
 
