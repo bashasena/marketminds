@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.jobs.snapshot_job import ist_now, run_snapshot_pipeline
+from app.routers.admin_settings import router as admin_settings_router
 from app.routers.alerts import router as alerts_router
 from app.routers.news import router as news_router
 from app.routers.sentiment import router as sentiment_router
@@ -19,6 +20,8 @@ from app.routers.snapshot import router as snapshot_router
 from app.routers.volume import router as volume_router
 from app.routers.x_sync import router as x_sync_router
 from app.services.alert_manager import alert_manager
+# Ensure new models are imported so Alembic autogenerate picks them up
+import app.models.volume_watchlist  # noqa: F401
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -78,6 +81,7 @@ def create_app() -> FastAPI:
     app.include_router(news_router)
     app.include_router(volume_router)
     app.include_router(alerts_router)
+    app.include_router(admin_settings_router)
 
     @app.get("/")
     def root():

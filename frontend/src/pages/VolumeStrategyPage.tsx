@@ -21,10 +21,9 @@ type StockData = {
 type WatchEntry = {
   sym: string;
   name: string;
-  lastCrossed: number; // highest integer band already notified (0 = none)
+  lastCrossed: number;
   lastRatio: number;
-  lastChecked: string; // HH:MM
-  // full stock snapshot for rendering the watchlist rows
+  lastChecked: string;
   avg30: number;
   curVol: number;
   pcr: number;
@@ -35,7 +34,6 @@ type WatchEntry = {
 type Toast = { id: number; sym: string; msg: string };
 type LogEntry = { time: string; msg: string; type: "info" | "alert" | "warn" };
 
-const WATCHLIST_KEY = "volumeWatchlist";
 const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 function fmt(n: number) {
@@ -47,18 +45,6 @@ function fmt(n: number) {
 
 function formatTime(d = new Date()) {
   return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}:${d.getSeconds().toString().padStart(2, "0")}`;
-}
-
-function loadWatchlist(): WatchEntry[] {
-  try {
-    return JSON.parse(localStorage.getItem(WATCHLIST_KEY) ?? "[]") as WatchEntry[];
-  } catch {
-    return [];
-  }
-}
-
-function saveWatchlist(list: WatchEntry[]) {
-  localStorage.setItem(WATCHLIST_KEY, JSON.stringify(list));
 }
 
 export function VolumeStrategyPage() {
@@ -75,19 +61,20 @@ export function VolumeStrategyPage() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [showFilters, setShowFilters] = useState(true);
   const [search, setSearch] = useState("");
+  const [watchSearch, setWatchSearch] = useState("");
 
-  // Watchlist / notification state
-  const [watchlist, setWatchlist] = useState<WatchEntry[]>(loadWatchlist);
+  // Server-side watchlist state
+  const [watchlist, setWatchlist] = useState<WatchEntry[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [refreshingPcr, setRefreshingPcr] = useState<Set<string>>(new Set());
   const toastCounter = useRef(0);
-  const watchlistRef = useRef(watchlist);
-  watchlistRef.current = watchlist;
+  const prevWatchRef = useRef<Record<string, number>>({});
 
   const appendLog = useCallback((msg: string, type: LogEntry["type"] = "info") => {
     setLogs((prev) => [{ time: formatTime(), msg, type }, ...prev].slice(0, 40));
   }, []);
 
-  // ─── Notification helpers ───────────────────────────────────────────────────
+  // ─── Toast helper ────────────────────────────────────────────────────────────
 
   const showToast = useCallback((sym: string, msg: string) => {
     const id = ++toastCounter.current;
@@ -95,142 +82,114 @@ export function VolumeStrategyPage() {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 6000);
   }, []);
 
-  const fireAlert = useCallback(
-    (sym: string, band: number) => {
-      const msg = `${sym} volume crossed ${band}× average!`;
-      if (Notification.permission === "granted") {
-        new Notification(`🔔 Volume Alert: ${sym}`, { body: msg, tag: `vol-${sym}-${band}` });
-      } else {
-        showToast(sym, msg);
-      }
-      appendLog(`NOTIFY: ${msg}`, "alert");
-    },
-    [appendLog, showToast],
-  );
+  // ─── Server-side watchlist fetch ────────────────────────────────────────────
 
-  const requestNotifPermission = useCallback(async () => {
-    if (Notification.permission === "default") {
-      await Notification.requestPermission();
+  const fetchWatchlist = useCallback(async () => {
+    try {
+      const res = await fetch("/volume/alerts", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { alerts: WatchEntry[] };
+      const entries = data.alerts ?? [];
+
+      // Fire in-browser toast when backend detects a new band crossing
+      entries.forEach((e) => {
+        const prev = prevWatchRef.current[e.sym] ?? 0;
+        if (e.lastCrossed > prev && prev > 0) {
+          const msg = `${e.sym} volume crossed ${e.lastCrossed}× average!`;
+          showToast(e.sym, msg);
+          appendLog(`NOTIFY: ${msg}`, "alert");
+        }
+        prevWatchRef.current[e.sym] = e.lastCrossed;
+      });
+
+      setWatchlist(entries);
+    } catch {
+      // silent
     }
-  }, []);
+  }, [appendLog, showToast]);
+
+  // Fetch on mount and poll every 5 min
+  useEffect(() => {
+    void fetchWatchlist();
+    const id = setInterval(() => void fetchWatchlist(), POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [fetchWatchlist]);
 
   // ─── Watchlist CRUD ─────────────────────────────────────────────────────────
 
-  // ── Backend alert registration (Telegram) ─────────────────────────────────
-  const registerBackendAlert = useCallback(async (sym: string, name: string, volRatio: number) => {
-    try {
-      await fetch("/volume/alerts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sym, name, current_ratio: volRatio }),
-      });
-    } catch {
-      // non-fatal — UI still tracks locally
-    }
-  }, []);
-
-  const unregisterBackendAlert = useCallback(async (sym: string) => {
-    try {
-      await fetch(`/volume/alerts/${encodeURIComponent(sym)}`, { method: "DELETE" });
-    } catch {
-      // non-fatal
-    }
-  }, []);
-
-  // On page load — re-register all localStorage watchlist entries with backend
-  useEffect(() => {
-    const stored = loadWatchlist();
-    stored.forEach((e) => void registerBackendAlert(e.sym, e.name, e.lastRatio));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   const addToWatchlist = useCallback(
-    (s: StockData) => {
-      setWatchlist((prev) => {
-        if (prev.some((e) => e.sym === s.sym)) return prev;
-        const entry: WatchEntry = {
-          sym: s.sym,
-          name: s.name,
-          lastCrossed: Math.floor(s.volRatio),
-          lastRatio: s.volRatio,
-          lastChecked: formatTime().slice(0, 5),
-          avg30: s.avg30,
-          curVol: s.curVol,
-          pcr: s.pcr,
-          oiTrend: s.oiTrend,
-          signal: s.signal,
-        };
-        const next = [...prev, entry];
-        saveWatchlist(next);
+    async (s: StockData) => {
+      try {
+        await fetch("/volume/alerts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sym: s.sym, name: s.name, current_ratio: s.volRatio }),
+        });
         appendLog(`Watching ${s.sym} — Telegram alerts enabled`, "info");
-        void registerBackendAlert(s.sym, s.name, s.volRatio);
-        void requestNotifPermission();
-        return next;
-      });
+        await fetchWatchlist();
+      } catch {
+        appendLog(`Failed to add ${s.sym} to watchlist`, "warn");
+      }
     },
-    [appendLog, registerBackendAlert, requestNotifPermission],
+    [appendLog, fetchWatchlist],
   );
 
-  const removeFromWatchlist = useCallback((sym: string) => {
-    setWatchlist((prev) => {
-      const next = prev.filter((e) => e.sym !== sym);
-      saveWatchlist(next);
-      void unregisterBackendAlert(sym);
-      return next;
-    });
-  }, [unregisterBackendAlert]);
+  const removeFromWatchlist = useCallback(
+    async (sym: string) => {
+      try {
+        await fetch(`/volume/alerts/${encodeURIComponent(sym)}`, { method: "DELETE" });
+        delete prevWatchRef.current[sym];
+        await fetchWatchlist();
+      } catch {
+        appendLog(`Failed to remove ${sym} from watchlist`, "warn");
+      }
+    },
+    [appendLog, fetchWatchlist],
+  );
+
+  const refreshPcr = useCallback(
+    async (sym: string) => {
+      setRefreshingPcr((prev) => new Set(prev).add(sym));
+      try {
+        const res = await fetch(`/volume/pcr/${encodeURIComponent(sym)}`, { cache: "no-store" });
+        if (!res.ok) {
+          const err = (await res.json().catch(() => ({}))) as { detail?: string };
+          throw new Error(err.detail ?? `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as {
+          sym: string;
+          pcr: number;
+          oiTrend: string;
+          callOi: number;
+          putOi: number;
+          nearestExpiry: string | null;
+        };
+        const now = formatTime().slice(0, 5);
+        setWatchlist((prev) =>
+          prev.map((e) =>
+            e.sym === sym
+              ? { ...e, pcr: data.pcr, oiTrend: data.oiTrend, lastChecked: now }
+              : e,
+          ),
+        );
+        appendLog(
+          `${sym} PCR updated: ${data.pcr.toFixed(2)} | ${data.oiTrend} | Call OI ${data.callOi.toLocaleString()} / Put OI ${data.putOi.toLocaleString()}${data.nearestExpiry ? ` (exp ${data.nearestExpiry})` : ""}`,
+          "info",
+        );
+      } catch (err) {
+        appendLog(`${sym} PCR refresh failed: ${err instanceof Error ? err.message : String(err)}`, "warn");
+      } finally {
+        setRefreshingPcr((prev) => {
+          const next = new Set(prev);
+          next.delete(sym);
+          return next;
+        });
+      }
+    },
+    [appendLog],
+  );
 
   const isWatched = useCallback((sym: string) => watchlist.some((e) => e.sym === sym), [watchlist]);
-
-  // ─── Polling ────────────────────────────────────────────────────────────────
-
-  const pollWatchlist = useCallback(async () => {
-    const current = watchlistRef.current;
-    if (current.length === 0) return;
-    const syms = current.map((e) => e.sym).join(",");
-    try {
-      const res = await fetch(`/volume/watch?symbols=${encodeURIComponent(syms)}`, { cache: "no-store" });
-      if (!res.ok) return;
-      const data = (await res.json()) as {
-        results: Array<{
-          sym: string; volRatio: number; avg30: number; curVol: number;
-          pcr: number; oiTrend: string; signal: Signal; error?: string;
-        }>;
-      };
-      const now = formatTime().slice(0, 5);
-
-      setWatchlist((prev) => {
-        const next = prev.map((entry) => {
-          const hit = data.results.find((r) => r.sym === entry.sym);
-          if (!hit || hit.error) return entry;
-          const newBand = Math.floor(hit.volRatio);
-          const updated: WatchEntry = {
-            ...entry,
-            lastRatio: hit.volRatio,
-            lastChecked: now,
-            avg30: hit.avg30,
-            curVol: hit.curVol,
-            pcr: hit.pcr,
-            oiTrend: hit.oiTrend,
-            signal: hit.signal,
-          };
-          if (newBand > entry.lastCrossed) {
-            fireAlert(entry.sym, newBand);
-            updated.lastCrossed = newBand;
-          }
-          return updated;
-        });
-        saveWatchlist(next);
-        return next;
-      });
-    } catch {
-      // silent — don't interrupt the user
-    }
-  }, [fireAlert]);
-
-  useEffect(() => {
-    const id = setInterval(() => void pollWatchlist(), POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [pollWatchlist]);
 
   // ─── Scanner ─────────────────────────────────────────────────────────────────
 
@@ -299,15 +258,20 @@ export function VolumeStrategyPage() {
     return [...alerts]
       .filter((a) => !q || a.sym.toLowerCase().includes(q) || a.name.toLowerCase().includes(q))
       .sort((a, b) => {
-      let diff = 0;
-      if (sortKey === "volRatio") diff = a.volRatio - b.volRatio;
-      else if (sortKey === "sym") diff = a.sym.localeCompare(b.sym);
-      else if (sortKey === "pcr") diff = a.pcr - b.pcr;
-      else if (sortKey === "curVol") diff = a.curVol - b.curVol;
-      else if (sortKey === "signal") diff = signalOrder[a.signal] - signalOrder[b.signal];
-      return sortDir === "desc" ? -diff : diff;
-    });
+        let diff = 0;
+        if (sortKey === "volRatio") diff = a.volRatio - b.volRatio;
+        else if (sortKey === "sym") diff = a.sym.localeCompare(b.sym);
+        else if (sortKey === "pcr") diff = a.pcr - b.pcr;
+        else if (sortKey === "curVol") diff = a.curVol - b.curVol;
+        else if (sortKey === "signal") diff = signalOrder[a.signal] - signalOrder[b.signal];
+        return sortDir === "desc" ? -diff : diff;
+      });
   }, [alerts, sortKey, sortDir, search]);
+
+  const filteredWatchlist = useMemo(() => {
+    const q = watchSearch.trim().toLowerCase();
+    return q ? watchlist.filter((e) => e.sym.toLowerCase().includes(q) || e.name.toLowerCase().includes(q)) : watchlist;
+  }, [watchlist, watchSearch]);
 
   useEffect(() => {
     void runScan();
@@ -439,89 +403,142 @@ export function VolumeStrategyPage() {
             </div>
           )}
 
-          {/* ─── Notification / Watch List ─────────────────────────────────── */}
+          {/* ─── Alert Watchlist (server-side) ────────────────────────────── */}
           {watchlist.length > 0 && (
             <div className="mb-8">
-              <p className="mb-2.5 text-xs font-medium uppercase tracking-wide text-slate-400">
-                🔔 Alert Watchlist
-                <span className="ml-2 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-400">
-                  polling every 5 min
-                </span>
-              </p>
+              <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                  🔔 Alert Watchlist
+                  <span className="ml-2 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-400">
+                    refreshes every 5 min
+                  </span>
+                  <span className="ml-1.5 rounded-full bg-slate-700 px-2 py-0.5 text-[10px] text-slate-300">
+                    {watchlist.length} watching
+                  </span>
+                </p>
+                {/* Watchlist search */}
+                <div className="relative">
+                  <span className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center text-slate-500">
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                    </svg>
+                  </span>
+                  <input
+                    type="text"
+                    value={watchSearch}
+                    onChange={(e) => setWatchSearch(e.target.value)}
+                    placeholder="Filter watchlist…"
+                    className="rounded-md border border-slate-700 bg-slate-900 py-1.5 pl-8 pr-3 text-xs text-slate-100 placeholder-slate-500 focus:border-emerald-500/50 focus:outline-none w-44"
+                  />
+                  {watchSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setWatchSearch("")}
+                      className="absolute inset-y-0 right-2 flex items-center text-slate-500 hover:text-slate-200"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
               {/* Watchlist header */}
-              <div className="mb-1 grid grid-cols-[70px_1fr_90px_90px_90px_90px_100px] gap-2.5 px-3.5 text-xs font-medium text-slate-500">
+              <div className="mb-1 grid grid-cols-[70px_1fr_90px_90px_90px_90px_90px_100px] gap-2.5 px-3.5 text-xs font-medium text-slate-500">
                 <span>SYMBOL</span>
                 <span>VOLUME vs 30D AVG</span>
                 <span>PCR</span>
                 <span>VOL RATIO</span>
                 <span>OI TREND</span>
                 <span>SIGNAL</span>
-                <span>ACTION</span>
+                <span>REFRESH</span>
+                <span>REMOVE</span>
               </div>
               <div className="flex flex-col gap-2">
-                {watchlist.map((entry) => {
-                  const scale = Math.max(entry.curVol, entry.avg30) || 1;
-                  const dailyPct = Math.round((entry.curVol / scale) * 100);
-                  const avgPct = Math.round((entry.avg30 / scale) * 100);
-                  const dailyColor =
-                    entry.signal === "bullish" ? "#00c896" : entry.signal === "bearish" ? "#ff4f4f" : "#f5a623";
-                  const pcrClass = entry.pcr < 0.8 ? "bull" : entry.pcr > 1.3 ? "bear" : "neut";
-                  const pcrLabel = entry.pcr < 0.8 ? "Bullish" : entry.pcr > 1.3 ? "Bearish" : "Neutral";
-                  const oiColor =
-                    entry.oiTrend === "Rising" ? "#00c896" : entry.oiTrend === "Falling" ? "#ff4f4f" : "#94a3b8";
-                  return (
-                    <div
-                      key={entry.sym}
-                      className={`grid grid-cols-[70px_1fr_90px_90px_90px_90px_100px] items-center gap-2.5 rounded-lg border border-slate-700 bg-slate-900/60 px-3.5 py-2.5 border-l-[3px] ${
-                        entry.signal === "bullish"
-                          ? "border-l-emerald-500"
-                          : entry.signal === "bearish"
-                            ? "border-l-red-500"
-                            : "border-l-amber-500"
-                      }`}
-                    >
-                      <div className="flex flex-col">
-                        <span className="font-mono text-sm font-semibold">{entry.sym}</span>
-                        <span className="text-[10px] text-slate-500">{entry.lastChecked}</span>
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-[34px] shrink-0 font-mono text-[10px] text-slate-400">Daily</span>
-                          <div className="relative h-2 flex-1 overflow-hidden rounded-sm bg-slate-800">
-                            <div className="h-full rounded-sm transition-all duration-500" style={{ width: `${dailyPct}%`, background: dailyColor }} />
-                          </div>
-                          <span className="w-[36px] shrink-0 text-right font-mono text-[10px]" style={{ color: dailyColor }}>{fmt(entry.curVol)}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-[34px] shrink-0 font-mono text-[10px] text-slate-500">30D avg</span>
-                          <div className="relative h-2 flex-1 overflow-hidden rounded-sm bg-slate-800">
-                            <div className="h-full rounded-sm bg-slate-600 transition-all duration-500" style={{ width: `${avgPct}%` }} />
-                          </div>
-                          <span className="w-[36px] shrink-0 text-right font-mono text-[10px] text-slate-500">{fmt(entry.avg30)}</span>
-                        </div>
-                      </div>
-                      <span className={`rounded px-2 py-1 text-center font-mono text-xs font-medium ${pcrClass === "bull" ? "bg-emerald-500/10 text-emerald-400" : pcrClass === "bear" ? "bg-red-500/10 text-red-400" : "bg-amber-500/10 text-amber-400"}`}>
-                        {entry.pcr}
-                        <br />
-                        <span className="text-[10px] opacity-70">{pcrLabel}</span>
-                      </span>
-                      <span className={`text-center font-mono text-sm font-semibold ${entry.lastRatio >= 2.5 ? "text-emerald-400" : "text-amber-400"}`}>
-                        {entry.lastRatio}x
-                      </span>
-                      <span className="text-center text-xs font-medium" style={{ color: oiColor }}>{entry.oiTrend}</span>
-                      <span className={`rounded-full px-2 py-0.5 text-center text-[11px] font-medium ${entry.signal === "bullish" ? "bg-emerald-500/10 text-emerald-400" : entry.signal === "bearish" ? "bg-red-500/10 text-red-400" : "bg-amber-500/10 text-amber-400"}`}>
-                        {entry.signal.charAt(0).toUpperCase() + entry.signal.slice(1)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removeFromWatchlist(entry.sym)}
-                        className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-[11px] font-medium text-red-400 hover:bg-red-500/20 transition-colors"
+                {filteredWatchlist.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-700 py-4 text-center text-xs text-slate-500">
+                    No watchlist entries match "{watchSearch}"
+                  </div>
+                ) : (
+                  filteredWatchlist.map((entry) => {
+                    const scale = Math.max(entry.curVol, entry.avg30) || 1;
+                    const dailyPct = Math.round((entry.curVol / scale) * 100);
+                    const avgPct = Math.round((entry.avg30 / scale) * 100);
+                    const dailyColor =
+                      entry.signal === "bullish" ? "#00c896" : entry.signal === "bearish" ? "#ff4f4f" : "#f5a623";
+                    const pcrClass = entry.pcr < 0.8 ? "bull" : entry.pcr > 1.3 ? "bear" : "neut";
+                    const pcrLabel = entry.pcr < 0.8 ? "Bullish" : entry.pcr > 1.3 ? "Bearish" : "Neutral";
+                    const oiColor =
+                      entry.oiTrend === "Rising" ? "#00c896" : entry.oiTrend === "Falling" ? "#ff4f4f" : "#94a3b8";
+                    return (
+                      <div
+                        key={entry.sym}
+                        className={`grid grid-cols-[70px_1fr_90px_90px_90px_90px_90px_100px] items-center gap-2.5 rounded-lg border border-slate-700 bg-slate-900/60 px-3.5 py-2.5 border-l-[3px] ${
+                          entry.signal === "bullish"
+                            ? "border-l-emerald-500"
+                            : entry.signal === "bearish"
+                              ? "border-l-red-500"
+                              : "border-l-amber-500"
+                        }`}
                       >
-                        Remove Alert
-                      </button>
-                    </div>
-                  );
-                })}
+                        <div className="flex flex-col">
+                          <span className="font-mono text-sm font-semibold">{entry.sym}</span>
+                          <span className="text-[10px] text-slate-500">{entry.lastChecked}</span>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-[34px] shrink-0 font-mono text-[10px] text-slate-400">Daily</span>
+                            <div className="relative h-2 flex-1 overflow-hidden rounded-sm bg-slate-800">
+                              <div className="h-full rounded-sm transition-all duration-500" style={{ width: `${dailyPct}%`, background: dailyColor }} />
+                            </div>
+                            <span className="w-[36px] shrink-0 text-right font-mono text-[10px]" style={{ color: dailyColor }}>{fmt(entry.curVol)}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-[34px] shrink-0 font-mono text-[10px] text-slate-500">30D avg</span>
+                            <div className="relative h-2 flex-1 overflow-hidden rounded-sm bg-slate-800">
+                              <div className="h-full rounded-sm bg-slate-600 transition-all duration-500" style={{ width: `${avgPct}%` }} />
+                            </div>
+                            <span className="w-[36px] shrink-0 text-right font-mono text-[10px] text-slate-500">{fmt(entry.avg30)}</span>
+                          </div>
+                        </div>
+                        <span className={`rounded px-2 py-1 text-center font-mono text-xs font-medium ${pcrClass === "bull" ? "bg-emerald-500/10 text-emerald-400" : pcrClass === "bear" ? "bg-red-500/10 text-red-400" : "bg-amber-500/10 text-amber-400"}`}>
+                          {entry.pcr.toFixed(2)}
+                          <br />
+                          <span className="text-[10px] opacity-70">{pcrLabel}</span>
+                        </span>
+                        <span className={`text-center font-mono text-sm font-semibold ${entry.lastRatio >= 2.5 ? "text-emerald-400" : "text-amber-400"}`}>
+                          {entry.lastRatio.toFixed(2)}x
+                        </span>
+                        <span className="text-center text-xs font-medium" style={{ color: oiColor }}>{entry.oiTrend}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-center text-[11px] font-medium ${entry.signal === "bullish" ? "bg-emerald-500/10 text-emerald-400" : entry.signal === "bearish" ? "bg-red-500/10 text-red-400" : "bg-amber-500/10 text-amber-400"}`}>
+                          {entry.signal.charAt(0).toUpperCase() + entry.signal.slice(1)}
+                        </span>
+                        {/* Update PCR button */}
+                        <button
+                          type="button"
+                          disabled={refreshingPcr.has(entry.sym)}
+                          onClick={() => void refreshPcr(entry.sym)}
+                          title="Fetch latest PCR for this symbol"
+                          className="flex items-center justify-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-[11px] font-medium text-sky-400 hover:bg-sky-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <span
+                            className={refreshingPcr.has(entry.sym) ? "animate-spin inline-block" : "inline-block"}
+                            style={{ display: "inline-block" }}
+                          >
+                            ↻
+                          </span>
+                          {refreshingPcr.has(entry.sym) ? "…" : "PCR"}
+                        </button>
+                        {/* Remove button */}
+                        <button
+                          type="button"
+                          onClick={() => void removeFromWatchlist(entry.sym)}
+                          className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-[11px] font-medium text-red-400 hover:bg-red-500/20 transition-colors"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           )}
@@ -631,7 +648,6 @@ export function VolumeStrategyPage() {
                   >
                     <span className="font-mono text-sm font-semibold">{s.sym}</span>
                     <div className="flex flex-col gap-1.5">
-                      {/* Daily volume bar */}
                       <div className="flex items-center gap-1.5">
                         <span className="w-[34px] shrink-0 font-mono text-[10px] text-slate-400">Daily</span>
                         <div className="relative h-2 flex-1 overflow-hidden rounded-sm bg-slate-800">
@@ -644,7 +660,6 @@ export function VolumeStrategyPage() {
                           {fmt(s.curVol)}
                         </span>
                       </div>
-                      {/* 30D avg bar */}
                       <div className="flex items-center gap-1.5">
                         <span className="w-[34px] shrink-0 font-mono text-[10px] text-slate-500">30D avg</span>
                         <div className="relative h-2 flex-1 overflow-hidden rounded-sm bg-slate-800">
@@ -690,10 +705,9 @@ export function VolumeStrategyPage() {
                     >
                       {s.signal.charAt(0).toUpperCase() + s.signal.slice(1)}
                     </span>
-                    {/* Alert button */}
                     <button
                       type="button"
-                      onClick={() => (watched ? removeFromWatchlist(s.sym) : addToWatchlist(s))}
+                      onClick={() => (watched ? void removeFromWatchlist(s.sym) : void addToWatchlist(s))}
                       title={watched ? "Remove alert" : "Add alert"}
                       className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
                         watched

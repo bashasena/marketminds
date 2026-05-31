@@ -22,6 +22,52 @@ export function AdminPage() {
   const [nseErr, setNseErr] = useState<string | null>(null);
   const [nseOk, setNseOk] = useState<string | null>(null);
 
+  // PCR refresh interval settings
+  const [pcrInterval, setPcrInterval] = useState<number | null>(null);
+  const [pcrSaving, setPcrSaving] = useState(false);
+  const [pcrErr, setPcrErr] = useState<string | null>(null);
+  const [pcrOk, setPcrOk] = useState<string | null>(null);
+  const PCR_OPTIONS = [5, 10, 30, 60];
+
+  // Load PCR interval from backend on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/admin/settings");
+        if (r.ok) {
+          const j = (await r.json()) as { pcr_refresh_interval_minutes: number };
+          setPcrInterval(j.pcr_refresh_interval_minutes);
+        }
+      } catch {
+        // non-fatal
+      }
+    })();
+  }, []);
+
+  const savePcrInterval = async () => {
+    if (pcrInterval == null) return;
+    setPcrSaving(true);
+    setPcrErr(null);
+    setPcrOk(null);
+    try {
+      const r = await fetch("/admin/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pcr_refresh_interval_minutes: pcrInterval }),
+      });
+      const j = (await r.json()) as { ok?: boolean; message?: string; detail?: string };
+      if (!r.ok) {
+        setPcrErr(String(j.detail ?? `${r.status} ${r.statusText}`));
+      } else {
+        setPcrOk(j.message ?? "Saved.");
+      }
+    } catch (e) {
+      setPcrErr(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setPcrSaving(false);
+    }
+  };
+
   useEffect(() => {
     (async () => {
       setLoadErr(null);
@@ -367,9 +413,49 @@ export function AdminPage() {
               </button>
             </div>
             <p className="mt-2 text-xs text-slate-500">
-              “Patch latest DB row” merges new X scores into the most recent saved snapshot for the selected market
+              "Patch latest DB row" merges new X scores into the most recent saved snapshot for the selected market
               (recomputes composite). Run a full refresh first if you have no data yet.
             </p>
+          </div>
+
+          {/* ─── PCR Refresh Interval ─────────────────────────────────────────── */}
+          <div className="border-t border-slate-800 pt-6">
+            <p className="text-xs font-medium uppercase tracking-widest text-slate-500">Volume Scanner — PCR Refresh Interval</p>
+            <p className="mt-1 text-sm text-slate-400">
+              How often the backend refreshes Put/Call Ratio data for all watched symbols in the Alert Watchlist.
+              Changes take effect immediately without restarting the server.
+            </p>
+            {pcrErr ? <p className="mt-2 text-sm text-rose-300">{pcrErr}</p> : null}
+            {pcrOk ? <p className="mt-2 text-sm text-emerald-300/90">{pcrOk}</p> : null}
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              {PCR_OPTIONS.map((mins) => (
+                <button
+                  key={mins}
+                  type="button"
+                  onClick={() => { setPcrInterval(mins); setPcrOk(null); setPcrErr(null); }}
+                  className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                    pcrInterval === mins
+                      ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-300"
+                      : "border-slate-600 bg-slate-800/60 text-slate-300 hover:bg-slate-700"
+                  }`}
+                >
+                  {mins} min
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={pcrSaving || pcrInterval == null}
+                onClick={() => void savePcrInterval()}
+                className="rounded-lg border border-sky-600/50 bg-sky-950/40 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-900/50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {pcrSaving ? "Saving…" : "Save"}
+              </button>
+            </div>
+            {pcrInterval != null && (
+              <p className="mt-2 text-xs text-slate-500">
+                Currently set to <span className="text-slate-300">{pcrInterval} minutes</span>.
+              </p>
+            )}
           </div>
         </div>
       </div>
