@@ -12,10 +12,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.jobs.snapshot_job import ist_now, run_snapshot_pipeline
+from app.routers.alerts import router as alerts_router
 from app.routers.news import router as news_router
 from app.routers.sentiment import router as sentiment_router
 from app.routers.snapshot import router as snapshot_router
+from app.routers.volume import router as volume_router
 from app.routers.x_sync import router as x_sync_router
+from app.services.alert_manager import alert_manager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -49,7 +52,10 @@ async def lifespan(app: FastAPI):
         settings.snapshot_cron_minute,
         settings.intraday_refresh_minutes or "off",
     )
+    alert_manager.start()
+    logger.info("AlertManager started")
     yield
+    alert_manager.stop()
     if scheduler:
         scheduler.shutdown(wait=False)
         scheduler = None
@@ -70,6 +76,8 @@ def create_app() -> FastAPI:
     app.include_router(sentiment_router)
     app.include_router(x_sync_router)
     app.include_router(news_router)
+    app.include_router(volume_router)
+    app.include_router(alerts_router)
 
     @app.get("/")
     def root():
