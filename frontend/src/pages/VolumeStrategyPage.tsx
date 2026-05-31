@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { DashboardTopBar } from "../components/DashboardTopBar";
 
-type MarketFilter = "nse" | "nasdaq" | "both";
+type MarketFilter = "nasdaq" | "sp500" | "both";
 type Signal = "bullish" | "bearish" | "neutral";
+type SortKey = "volRatio" | "sym" | "pcr" | "curVol" | "signal";
+type SortDir = "desc" | "asc";
 
-type Stock = { sym: string; name: string };
-type StockData = Stock & {
+type StockData = {
+  sym: string;
+  name: string;
   avg30: number;
   curVol: number;
   volRatio: number;
@@ -15,52 +18,25 @@ type StockData = Stock & {
   signal: Signal;
 };
 
+type WatchEntry = {
+  sym: string;
+  name: string;
+  lastCrossed: number; // highest integer band already notified (0 = none)
+  lastRatio: number;
+  lastChecked: string; // HH:MM
+  // full stock snapshot for rendering the watchlist rows
+  avg30: number;
+  curVol: number;
+  pcr: number;
+  oiTrend: string;
+  signal: Signal;
+};
+
+type Toast = { id: number; sym: string; msg: string };
 type LogEntry = { time: string; msg: string; type: "info" | "alert" | "warn" };
 
-const NSE_STOCKS: Stock[] = [
-  { sym: "RELIANCE", name: "Reliance Industries" },
-  { sym: "TCS", name: "Tata Consultancy" },
-  { sym: "HDFCBANK", name: "HDFC Bank" },
-  { sym: "INFY", name: "Infosys" },
-  { sym: "ICICIBANK", name: "ICICI Bank" },
-  { sym: "HINDUNILVR", name: "HUL" },
-  { sym: "ITC", name: "ITC Ltd" },
-  { sym: "KOTAKBANK", name: "Kotak Mahindra" },
-  { sym: "LT", name: "L&T" },
-  { sym: "AXISBANK", name: "Axis Bank" },
-  { sym: "BAJFINANCE", name: "Bajaj Finance" },
-  { sym: "WIPRO", name: "Wipro" },
-  { sym: "SBIN", name: "SBI" },
-  { sym: "MARUTI", name: "Maruti Suzuki" },
-  { sym: "TITAN", name: "Titan" },
-  { sym: "ASIANPAINT", name: "Asian Paints" },
-  { sym: "SUNPHARMA", name: "Sun Pharma" },
-  { sym: "NTPC", name: "NTPC" },
-  { sym: "POWERGRID", name: "Power Grid" },
-  { sym: "ADANIENT", name: "Adani Enterprises" },
-];
-
-const NASDAQ_STOCKS: Stock[] = [
-  { sym: "AAPL", name: "Apple" },
-  { sym: "MSFT", name: "Microsoft" },
-  { sym: "NVDA", name: "NVIDIA" },
-  { sym: "AMZN", name: "Amazon" },
-  { sym: "META", name: "Meta" },
-  { sym: "GOOGL", name: "Alphabet" },
-  { sym: "TSLA", name: "Tesla" },
-  { sym: "AVGO", name: "Broadcom" },
-  { sym: "COST", name: "Costco" },
-  { sym: "NFLX", name: "Netflix" },
-  { sym: "AMD", name: "AMD" },
-  { sym: "ADBE", name: "Adobe" },
-  { sym: "QCOM", name: "Qualcomm" },
-  { sym: "INTC", name: "Intel" },
-  { sym: "CSCO", name: "Cisco" },
-];
-
-function rnd(min: number, max: number) {
-  return Math.random() * (max - min) + min;
-}
+const WATCHLIST_KEY = "volumeWatchlist";
+const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 function fmt(n: number) {
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
@@ -69,25 +45,25 @@ function fmt(n: number) {
   return n.toString();
 }
 
-function generateStockData(stock: Stock): StockData {
-  const avg30 = Math.round(rnd(2e6, 80e6));
-  const volRatio = rnd(0.6, 5.5);
-  const curVol = Math.round(avg30 * volRatio);
-  const pcr = parseFloat(rnd(0.4, 2.2).toFixed(2));
-  const oiTrend = ["Rising", "Falling", "Flat"][Math.floor(rnd(0, 3))];
-  let signal: Signal = "neutral";
-  if (pcr < 0.8 && volRatio > 1.5) signal = "bullish";
-  else if (pcr > 1.3 && volRatio > 1.5) signal = "bearish";
-  return { ...stock, avg30, curVol, volRatio: parseFloat(volRatio.toFixed(2)), pcr, oiTrend, signal };
-}
-
 function formatTime(d = new Date()) {
   return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}:${d.getSeconds().toString().padStart(2, "0")}`;
 }
 
+function loadWatchlist(): WatchEntry[] {
+  try {
+    return JSON.parse(localStorage.getItem(WATCHLIST_KEY) ?? "[]") as WatchEntry[];
+  } catch {
+    return [];
+  }
+}
+
+function saveWatchlist(list: WatchEntry[]) {
+  localStorage.setItem(WATCHLIST_KEY, JSON.stringify(list));
+}
+
 export function VolumeStrategyPage() {
-  const [market, setMarket] = useState<MarketFilter>("nse");
-  const [thresh, setThresh] = useState(1.5);
+  const [market, setMarket] = useState<MarketFilter>("nasdaq");
+  const [thresh, setThresh] = useState(1.0);
   const [pcrMin, setPcrMin] = useState(0.7);
   const [scanning, setScanning] = useState(false);
   const [statusColor, setStatusColor] = useState("#00c896");
@@ -95,53 +71,246 @@ export function VolumeStrategyPage() {
   const [metrics, setMetrics] = useState({ scanned: "—", alerts: "—", bull: "—", bear: "—", time: "—" });
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [emptyMessage, setEmptyMessage] = useState("Run a scan to detect volume surges");
+  const [sortKey, setSortKey] = useState<SortKey>("volRatio");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [showFilters, setShowFilters] = useState(true);
+  const [search, setSearch] = useState("");
+
+  // Watchlist / notification state
+  const [watchlist, setWatchlist] = useState<WatchEntry[]>(loadWatchlist);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastCounter = useRef(0);
+  const watchlistRef = useRef(watchlist);
+  watchlistRef.current = watchlist;
 
   const appendLog = useCallback((msg: string, type: LogEntry["type"] = "info") => {
     setLogs((prev) => [{ time: formatTime(), msg, type }, ...prev].slice(0, 40));
   }, []);
 
-  const runScan = useCallback(() => {
+  // ─── Notification helpers ───────────────────────────────────────────────────
+
+  const showToast = useCallback((sym: string, msg: string) => {
+    const id = ++toastCounter.current;
+    setToasts((prev) => [...prev, { id, sym, msg }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 6000);
+  }, []);
+
+  const fireAlert = useCallback(
+    (sym: string, band: number) => {
+      const msg = `${sym} volume crossed ${band}× average!`;
+      if (Notification.permission === "granted") {
+        new Notification(`🔔 Volume Alert: ${sym}`, { body: msg, tag: `vol-${sym}-${band}` });
+      } else {
+        showToast(sym, msg);
+      }
+      appendLog(`NOTIFY: ${msg}`, "alert");
+    },
+    [appendLog, showToast],
+  );
+
+  const requestNotifPermission = useCallback(async () => {
+    if (Notification.permission === "default") {
+      await Notification.requestPermission();
+    }
+  }, []);
+
+  // ─── Watchlist CRUD ─────────────────────────────────────────────────────────
+
+  // ── Backend alert registration (Telegram) ─────────────────────────────────
+  const registerBackendAlert = useCallback(async (sym: string, name: string, volRatio: number) => {
+    try {
+      await fetch("/volume/alerts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sym, name, current_ratio: volRatio }),
+      });
+    } catch {
+      // non-fatal — UI still tracks locally
+    }
+  }, []);
+
+  const unregisterBackendAlert = useCallback(async (sym: string) => {
+    try {
+      await fetch(`/volume/alerts/${encodeURIComponent(sym)}`, { method: "DELETE" });
+    } catch {
+      // non-fatal
+    }
+  }, []);
+
+  // On page load — re-register all localStorage watchlist entries with backend
+  useEffect(() => {
+    const stored = loadWatchlist();
+    stored.forEach((e) => void registerBackendAlert(e.sym, e.name, e.lastRatio));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const addToWatchlist = useCallback(
+    (s: StockData) => {
+      setWatchlist((prev) => {
+        if (prev.some((e) => e.sym === s.sym)) return prev;
+        const entry: WatchEntry = {
+          sym: s.sym,
+          name: s.name,
+          lastCrossed: Math.floor(s.volRatio),
+          lastRatio: s.volRatio,
+          lastChecked: formatTime().slice(0, 5),
+          avg30: s.avg30,
+          curVol: s.curVol,
+          pcr: s.pcr,
+          oiTrend: s.oiTrend,
+          signal: s.signal,
+        };
+        const next = [...prev, entry];
+        saveWatchlist(next);
+        appendLog(`Watching ${s.sym} — Telegram alerts enabled`, "info");
+        void registerBackendAlert(s.sym, s.name, s.volRatio);
+        void requestNotifPermission();
+        return next;
+      });
+    },
+    [appendLog, registerBackendAlert, requestNotifPermission],
+  );
+
+  const removeFromWatchlist = useCallback((sym: string) => {
+    setWatchlist((prev) => {
+      const next = prev.filter((e) => e.sym !== sym);
+      saveWatchlist(next);
+      void unregisterBackendAlert(sym);
+      return next;
+    });
+  }, [unregisterBackendAlert]);
+
+  const isWatched = useCallback((sym: string) => watchlist.some((e) => e.sym === sym), [watchlist]);
+
+  // ─── Polling ────────────────────────────────────────────────────────────────
+
+  const pollWatchlist = useCallback(async () => {
+    const current = watchlistRef.current;
+    if (current.length === 0) return;
+    const syms = current.map((e) => e.sym).join(",");
+    try {
+      const res = await fetch(`/volume/watch?symbols=${encodeURIComponent(syms)}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        results: Array<{
+          sym: string; volRatio: number; avg30: number; curVol: number;
+          pcr: number; oiTrend: string; signal: Signal; error?: string;
+        }>;
+      };
+      const now = formatTime().slice(0, 5);
+
+      setWatchlist((prev) => {
+        const next = prev.map((entry) => {
+          const hit = data.results.find((r) => r.sym === entry.sym);
+          if (!hit || hit.error) return entry;
+          const newBand = Math.floor(hit.volRatio);
+          const updated: WatchEntry = {
+            ...entry,
+            lastRatio: hit.volRatio,
+            lastChecked: now,
+            avg30: hit.avg30,
+            curVol: hit.curVol,
+            pcr: hit.pcr,
+            oiTrend: hit.oiTrend,
+            signal: hit.signal,
+          };
+          if (newBand > entry.lastCrossed) {
+            fireAlert(entry.sym, newBand);
+            updated.lastCrossed = newBand;
+          }
+          return updated;
+        });
+        saveWatchlist(next);
+        return next;
+      });
+    } catch {
+      // silent — don't interrupt the user
+    }
+  }, [fireAlert]);
+
+  useEffect(() => {
+    const id = setInterval(() => void pollWatchlist(), POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [pollWatchlist]);
+
+  // ─── Scanner ─────────────────────────────────────────────────────────────────
+
+  const runScan = useCallback(async () => {
     setScanning(true);
     setStatusColor("#f5a623");
-    setEmptyMessage("Scanning...");
+    setEmptyMessage("Fetching live volume data...");
     appendLog(`Scan started — market: ${market.toUpperCase()}, threshold: ${thresh}x`, "info");
 
-    let pool: Stock[] = [];
-    if (market === "nse" || market === "both") pool = [...pool, ...NSE_STOCKS];
-    if (market === "nasdaq" || market === "both") pool = [...pool, ...NASDAQ_STOCKS];
+    try {
+      const url = `/volume/scan?market=${encodeURIComponent(market)}&threshold=${thresh}&pcr_min=${pcrMin}`;
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+      const data = (await res.json()) as {
+        alerts?: StockData[];
+        metrics?: Record<string, number>;
+        errors?: { sym: string }[];
+      };
 
-    window.setTimeout(() => {
-      const all = pool.map(generateStockData);
-      const filtered = all.filter((s) => s.volRatio >= thresh && s.pcr >= pcrMin);
-      filtered.sort((a, b) => b.volRatio - a.volRatio);
-
-      const bull = filtered.filter((s) => s.signal === "bullish").length;
-      const bear = filtered.filter((s) => s.signal === "bearish").length;
+      const filtered: StockData[] = data.alerts ?? [];
+      const m = data.metrics ?? {};
       const tStr = formatTime().slice(0, 5);
 
       setMetrics({
-        scanned: String(all.length),
-        alerts: String(filtered.length),
-        bull: String(bull),
-        bear: String(bear),
+        scanned: String(m.scanned ?? filtered.length),
+        alerts: String(m.alertCount ?? filtered.length),
+        bull: String(m.bullish ?? 0),
+        bear: String(m.bearish ?? 0),
         time: tStr,
       });
       setAlerts(filtered);
       setStatusColor("#00c896");
-      setScanning(false);
-      setEmptyMessage(
-        filtered.length === 0 ? `No stocks exceed ${thresh}x volume threshold right now` : "",
-      );
+      setEmptyMessage(filtered.length === 0 ? `No stocks exceed ${thresh}x volume threshold right now` : "");
 
-      appendLog(`Scan complete — ${all.length} scanned, ${filtered.length} alerts fired`, "alert");
+      appendLog(`Scan complete — ${m.scanned ?? "?"} scanned, ${filtered.length} alerts fired`, "alert");
       filtered.forEach((s) =>
         appendLog(`ALERT: ${s.sym} — Vol ${s.volRatio}x avg | PCR ${s.pcr} | ${s.signal.toUpperCase()}`, "warn"),
       );
-    }, 900);
+      if (data.errors?.length) {
+        appendLog(`${data.errors.length} symbol(s) failed to fetch`, "info");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      appendLog(`Scan failed: ${msg}`, "warn");
+      setEmptyMessage("Scan failed — check backend connection");
+      setStatusColor("#ff4f4f");
+    } finally {
+      setScanning(false);
+    }
   }, [appendLog, market, pcrMin, thresh]);
 
+  const handleSort = useCallback((key: SortKey) => {
+    setSortKey((prev) => {
+      if (prev === key) {
+        setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+        return prev;
+      }
+      setSortDir("desc");
+      return key;
+    });
+  }, []);
+
+  const sortedAlerts = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const signalOrder: Record<Signal, number> = { bullish: 0, neutral: 1, bearish: 2 };
+    return [...alerts]
+      .filter((a) => !q || a.sym.toLowerCase().includes(q) || a.name.toLowerCase().includes(q))
+      .sort((a, b) => {
+      let diff = 0;
+      if (sortKey === "volRatio") diff = a.volRatio - b.volRatio;
+      else if (sortKey === "sym") diff = a.sym.localeCompare(b.sym);
+      else if (sortKey === "pcr") diff = a.pcr - b.pcr;
+      else if (sortKey === "curVol") diff = a.curVol - b.curVol;
+      else if (sortKey === "signal") diff = signalOrder[a.signal] - signalOrder[b.signal];
+      return sortDir === "desc" ? -diff : diff;
+    });
+  }, [alerts, sortKey, sortDir, search]);
+
   useEffect(() => {
-    runScan();
+    void runScan();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- initial scan on mount
 
   const logColor = (type: LogEntry["type"]) =>
@@ -150,11 +319,58 @@ export function VolumeStrategyPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <DashboardTopBar />
+
+      {/* Toast container */}
+      <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className="flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-slate-900 px-4 py-3 shadow-lg text-sm text-emerald-300"
+          >
+            <span>🔔</span>
+            <span>{t.msg}</span>
+            <button
+              type="button"
+              onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
+              className="ml-2 text-slate-500 hover:text-slate-200 text-xs"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+
       <div className="mx-auto max-w-6xl px-4 py-10 pb-16">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <Link to="/" className="text-xs text-slate-400 hover:text-slate-200">
             ← Back to dashboard
           </Link>
+        </div>
+
+        {/* ─── Telegram channel info banner ─────────────────────────────────── */}
+        <div className="mb-6 flex flex-col gap-3 rounded-xl border border-sky-500/20 bg-sky-500/5 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 text-2xl">📣</span>
+            <div>
+              <p className="text-sm font-semibold text-sky-300">Get live volume alerts on Telegram</p>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Join our channel to receive push notifications whenever a stock crosses a new volume threshold.
+                <br className="hidden sm:block" />
+                You can also add your own watch alerts from the scanner below — they'll post to this channel.
+              </p>
+            </div>
+          </div>
+          <a
+            href="https://t.me/trader_mind_alert"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex shrink-0 items-center gap-2 rounded-lg border border-sky-500/40 bg-sky-500/15 px-4 py-2 text-sm font-semibold text-sky-300 transition-colors hover:bg-sky-500/25"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-2.012 9.483c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.19 14.447l-2.95-.924c-.64-.204-.654-.64.136-.948l11.52-4.44c.537-.194 1.006.131.666.113z"/>
+            </svg>
+            Join @trader_mind_alert
+          </a>
         </div>
 
         <div className="volume-scanner">
@@ -172,46 +388,145 @@ export function VolumeStrategyPage() {
                 onChange={(e) => setMarket(e.target.value as MarketFilter)}
                 className="rounded-md border border-slate-600 bg-slate-900 px-2.5 py-1.5 text-sm text-slate-100"
               >
-                <option value="nse">NSE (Nifty 50)</option>
                 <option value="nasdaq">NASDAQ 100</option>
+                <option value="sp500">S&amp;P 500</option>
                 <option value="both">Both Markets</option>
               </select>
               <button
                 type="button"
-                onClick={runScan}
+                onClick={() => void runScan()}
                 disabled={scanning}
                 className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-4 py-1.5 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-60"
               >
-                Scan Now
+                {scanning ? "Scanning…" : "Scan Now"}
               </button>
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-400 select-none">
+                <input
+                  type="checkbox"
+                  checked={showFilters}
+                  onChange={(e) => setShowFilters(e.target.checked)}
+                  className="h-3.5 w-3.5 accent-emerald-500"
+                />
+                Filters
+              </label>
             </div>
           </div>
 
-          <div className="mb-6 flex flex-wrap items-center gap-3 text-sm text-slate-400">
-            <label>Volume threshold:</label>
-            <input
-              type="range"
-              min={1}
-              max={5}
-              step={0.1}
-              value={thresh}
-              onChange={(e) => setThresh(parseFloat(e.target.value))}
-              className="w-36"
-            />
-            <span className="font-mono text-sm font-medium text-emerald-400">{thresh.toFixed(1)}x</span>
-            <label className="ml-3">Min PCR filter:</label>
-            <input
-              type="range"
-              min={0.5}
-              max={2}
-              step={0.1}
-              value={pcrMin}
-              onChange={(e) => setPcrMin(parseFloat(e.target.value))}
-              className="w-36"
-            />
-            <span className="font-mono text-sm font-medium text-emerald-400">{pcrMin.toFixed(1)}</span>
-          </div>
+          {showFilters && (
+            <div className="mb-6 flex flex-wrap items-center gap-3 text-sm text-slate-400">
+              <label>Volume threshold:</label>
+              <input
+                type="range"
+                min={1}
+                max={5}
+                step={0.1}
+                value={thresh}
+                onChange={(e) => setThresh(parseFloat(e.target.value))}
+                className="w-36"
+              />
+              <span className="font-mono text-sm font-medium text-emerald-400">{thresh.toFixed(1)}x</span>
+              <label className="ml-3">Min PCR filter:</label>
+              <input
+                type="range"
+                min={0.5}
+                max={2}
+                step={0.1}
+                value={pcrMin}
+                onChange={(e) => setPcrMin(parseFloat(e.target.value))}
+                className="w-36"
+              />
+              <span className="font-mono text-sm font-medium text-emerald-400">{pcrMin.toFixed(1)}</span>
+            </div>
+          )}
 
+          {/* ─── Notification / Watch List ─────────────────────────────────── */}
+          {watchlist.length > 0 && (
+            <div className="mb-8">
+              <p className="mb-2.5 text-xs font-medium uppercase tracking-wide text-slate-400">
+                🔔 Alert Watchlist
+                <span className="ml-2 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-400">
+                  polling every 5 min
+                </span>
+              </p>
+              {/* Watchlist header */}
+              <div className="mb-1 grid grid-cols-[70px_1fr_90px_90px_90px_90px_100px] gap-2.5 px-3.5 text-xs font-medium text-slate-500">
+                <span>SYMBOL</span>
+                <span>VOLUME vs 30D AVG</span>
+                <span>PCR</span>
+                <span>VOL RATIO</span>
+                <span>OI TREND</span>
+                <span>SIGNAL</span>
+                <span>ACTION</span>
+              </div>
+              <div className="flex flex-col gap-2">
+                {watchlist.map((entry) => {
+                  const scale = Math.max(entry.curVol, entry.avg30) || 1;
+                  const dailyPct = Math.round((entry.curVol / scale) * 100);
+                  const avgPct = Math.round((entry.avg30 / scale) * 100);
+                  const dailyColor =
+                    entry.signal === "bullish" ? "#00c896" : entry.signal === "bearish" ? "#ff4f4f" : "#f5a623";
+                  const pcrClass = entry.pcr < 0.8 ? "bull" : entry.pcr > 1.3 ? "bear" : "neut";
+                  const pcrLabel = entry.pcr < 0.8 ? "Bullish" : entry.pcr > 1.3 ? "Bearish" : "Neutral";
+                  const oiColor =
+                    entry.oiTrend === "Rising" ? "#00c896" : entry.oiTrend === "Falling" ? "#ff4f4f" : "#94a3b8";
+                  return (
+                    <div
+                      key={entry.sym}
+                      className={`grid grid-cols-[70px_1fr_90px_90px_90px_90px_100px] items-center gap-2.5 rounded-lg border border-slate-700 bg-slate-900/60 px-3.5 py-2.5 border-l-[3px] ${
+                        entry.signal === "bullish"
+                          ? "border-l-emerald-500"
+                          : entry.signal === "bearish"
+                            ? "border-l-red-500"
+                            : "border-l-amber-500"
+                      }`}
+                    >
+                      <div className="flex flex-col">
+                        <span className="font-mono text-sm font-semibold">{entry.sym}</span>
+                        <span className="text-[10px] text-slate-500">{entry.lastChecked}</span>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-[34px] shrink-0 font-mono text-[10px] text-slate-400">Daily</span>
+                          <div className="relative h-2 flex-1 overflow-hidden rounded-sm bg-slate-800">
+                            <div className="h-full rounded-sm transition-all duration-500" style={{ width: `${dailyPct}%`, background: dailyColor }} />
+                          </div>
+                          <span className="w-[36px] shrink-0 text-right font-mono text-[10px]" style={{ color: dailyColor }}>{fmt(entry.curVol)}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-[34px] shrink-0 font-mono text-[10px] text-slate-500">30D avg</span>
+                          <div className="relative h-2 flex-1 overflow-hidden rounded-sm bg-slate-800">
+                            <div className="h-full rounded-sm bg-slate-600 transition-all duration-500" style={{ width: `${avgPct}%` }} />
+                          </div>
+                          <span className="w-[36px] shrink-0 text-right font-mono text-[10px] text-slate-500">{fmt(entry.avg30)}</span>
+                        </div>
+                      </div>
+                      <span className={`rounded px-2 py-1 text-center font-mono text-xs font-medium ${pcrClass === "bull" ? "bg-emerald-500/10 text-emerald-400" : pcrClass === "bear" ? "bg-red-500/10 text-red-400" : "bg-amber-500/10 text-amber-400"}`}>
+                        {entry.pcr}
+                        <br />
+                        <span className="text-[10px] opacity-70">{pcrLabel}</span>
+                      </span>
+                      <span className={`text-center font-mono text-sm font-semibold ${entry.lastRatio >= 2.5 ? "text-emerald-400" : "text-amber-400"}`}>
+                        {entry.lastRatio}x
+                      </span>
+                      <span className="text-center text-xs font-medium" style={{ color: oiColor }}>{entry.oiTrend}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-center text-[11px] font-medium ${entry.signal === "bullish" ? "bg-emerald-500/10 text-emerald-400" : entry.signal === "bearish" ? "bg-red-500/10 text-red-400" : "bg-amber-500/10 text-amber-400"}`}>
+                        {entry.signal.charAt(0).toUpperCase() + entry.signal.slice(1)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeFromWatchlist(entry.sym)}
+                        className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-[11px] font-medium text-red-400 hover:bg-red-500/20 transition-colors"
+                      >
+                        Remove Alert
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ─── Metrics ──────────────────────────────────────────────────────── */}
           <div className="mb-6 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2.5">
             {[
               ["Stocks Scanned", metrics.scanned, ""],
@@ -227,34 +542,86 @@ export function VolumeStrategyPage() {
             ))}
           </div>
 
-          <p className="mb-2.5 text-xs font-medium uppercase tracking-wide text-slate-500">Alert Results</p>
-          <div className="mb-1 grid grid-cols-[70px_1fr_90px_90px_90px_90px] gap-2.5 px-3.5 text-xs font-medium text-slate-500">
-            <span>SYMBOL</span>
-            <span>VOLUME vs 30D AVG</span>
-            <span>PCR</span>
-            <span>VOL RATIO</span>
-            <span>OI TREND</span>
-            <span>SIGNAL</span>
+          {/* ─── Results table ────────────────────────────────────────────────── */}
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Alert Results</p>
+            <div className="relative">
+              <span className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center text-slate-500">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                </svg>
+              </span>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search symbol or name…"
+                className="rounded-md border border-slate-700 bg-slate-900 py-1.5 pl-8 pr-3 text-xs text-slate-100 placeholder-slate-500 focus:border-emerald-500/50 focus:outline-none w-52"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  className="absolute inset-y-0 right-2 flex items-center text-slate-500 hover:text-slate-200"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="mb-1 grid grid-cols-[70px_1fr_90px_90px_90px_90px_70px] gap-2.5 px-3.5 text-xs font-medium text-slate-500">
+            {(
+              [
+                ["sym", "SYMBOL"],
+                [null, "VOLUME vs 30D AVG"],
+                ["pcr", "PCR"],
+                ["volRatio", "VOL RATIO"],
+                [null, "OI TREND"],
+                ["signal", "SIGNAL"],
+                [null, "ALERT"],
+              ] as [SortKey | null, string][]
+            ).map(([key, label]) =>
+              key ? (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => handleSort(key)}
+                  className="flex items-center gap-1 text-left hover:text-slate-200 transition-colors"
+                >
+                  {label}
+                  <span className="font-mono text-[10px]">
+                    {sortKey === key ? (sortDir === "desc" ? "↓" : "↑") : "↕"}
+                  </span>
+                </button>
+              ) : (
+                <span key={label}>{label}</span>
+              )
+            )}
           </div>
 
-          {alerts.length === 0 ? (
+          {sortedAlerts.length === 0 ? (
             <div className="rounded-lg border border-dashed border-slate-700 py-8 text-center text-sm text-slate-400">
-              {emptyMessage}
+              {search.trim()
+                ? `No results matching "${search.trim()}" — try a different symbol or name`
+                : emptyMessage}
             </div>
           ) : (
             <div className="mb-6 flex flex-col gap-2">
-              {alerts.map((s, i) => {
-                const pct = Math.min(Math.round((s.curVol / s.avg30) * 100), 400);
-                const barColor =
+              {sortedAlerts.map((s, i) => {
+                const scale = Math.max(s.curVol, s.avg30) || 1;
+                const dailyPct = Math.round((s.curVol / scale) * 100);
+                const avgPct = Math.round((s.avg30 / scale) * 100);
+                const dailyColor =
                   s.signal === "bullish" ? "#00c896" : s.signal === "bearish" ? "#ff4f4f" : "#f5a623";
                 const pcrClass = s.pcr < 0.8 ? "bull" : s.pcr > 1.3 ? "bear" : "neut";
                 const pcrLabel = s.pcr < 0.8 ? "Bullish" : s.pcr > 1.3 ? "Bearish" : "Neutral";
                 const oiColor =
                   s.oiTrend === "Rising" ? "#00c896" : s.oiTrend === "Falling" ? "#ff4f4f" : "#94a3b8";
+                const watched = isWatched(s.sym);
                 return (
                   <div
                     key={`${s.sym}-${i}`}
-                    className={`grid grid-cols-[70px_1fr_90px_90px_90px_90px] items-center gap-2.5 rounded-lg border border-slate-800 bg-slate-950/40 px-3.5 py-2.5 border-l-[3px] ${
+                    className={`grid grid-cols-[70px_1fr_90px_90px_90px_90px_70px] items-center gap-2.5 rounded-lg border border-slate-800 bg-slate-950/40 px-3.5 py-2.5 border-l-[3px] ${
                       s.signal === "bullish"
                         ? "border-l-emerald-500"
                         : s.signal === "bearish"
@@ -263,16 +630,33 @@ export function VolumeStrategyPage() {
                     }`}
                   >
                     <span className="font-mono text-sm font-semibold">{s.sym}</span>
-                    <div className="flex flex-col gap-0.5">
-                      <div className="h-1.5 overflow-hidden rounded bg-slate-800">
-                        <div
-                          className="h-full rounded transition-all duration-500"
-                          style={{ width: `${Math.min(pct / 4, 100)}%`, background: barColor }}
-                        />
+                    <div className="flex flex-col gap-1.5">
+                      {/* Daily volume bar */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-[34px] shrink-0 font-mono text-[10px] text-slate-400">Daily</span>
+                        <div className="relative h-2 flex-1 overflow-hidden rounded-sm bg-slate-800">
+                          <div
+                            className="h-full rounded-sm transition-all duration-500"
+                            style={{ width: `${dailyPct}%`, background: dailyColor }}
+                          />
+                        </div>
+                        <span className="w-[36px] shrink-0 text-right font-mono text-[10px]" style={{ color: dailyColor }}>
+                          {fmt(s.curVol)}
+                        </span>
                       </div>
-                      <span className="font-mono text-[11px] text-slate-500">
-                        {fmt(s.curVol)} / avg {fmt(s.avg30)}
-                      </span>
+                      {/* 30D avg bar */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-[34px] shrink-0 font-mono text-[10px] text-slate-500">30D avg</span>
+                        <div className="relative h-2 flex-1 overflow-hidden rounded-sm bg-slate-800">
+                          <div
+                            className="h-full rounded-sm bg-slate-600 transition-all duration-500"
+                            style={{ width: `${avgPct}%` }}
+                          />
+                        </div>
+                        <span className="w-[36px] shrink-0 text-right font-mono text-[10px] text-slate-500">
+                          {fmt(s.avg30)}
+                        </span>
+                      </div>
                     </div>
                     <span
                       className={`rounded px-2 py-1 text-center font-mono text-xs font-medium ${
@@ -306,12 +690,26 @@ export function VolumeStrategyPage() {
                     >
                       {s.signal.charAt(0).toUpperCase() + s.signal.slice(1)}
                     </span>
+                    {/* Alert button */}
+                    <button
+                      type="button"
+                      onClick={() => (watched ? removeFromWatchlist(s.sym) : addToWatchlist(s))}
+                      title={watched ? "Remove alert" : "Add alert"}
+                      className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                        watched
+                          ? "border border-emerald-500/40 bg-emerald-500/15 text-emerald-400 hover:bg-red-500/15 hover:text-red-400 hover:border-red-500/40"
+                          : "border border-slate-600 bg-slate-800 text-slate-400 hover:border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-400"
+                      }`}
+                    >
+                      {watched ? "🔔 On" : "+ Alert"}
+                    </button>
                   </div>
                 );
               })}
             </div>
           )}
 
+          {/* ─── Activity Log ─────────────────────────────────────────────────── */}
           <p className="mb-2.5 text-xs font-medium uppercase tracking-wide text-slate-500">Activity Log</p>
           <div className="max-h-36 overflow-y-auto rounded-lg border border-slate-800 bg-slate-900/40 p-3">
             {logs.length === 0 ? (

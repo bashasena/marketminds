@@ -11,6 +11,7 @@ export default defineConfig({
       "/health": { target: "http://localhost:8000", changeOrigin: true },
       "/news": { target: "http://localhost:8000", changeOrigin: true },
       "/x": { target: "http://localhost:8000", changeOrigin: true },
+      "^/volume/": { target: "http://localhost:8000", changeOrigin: true },
     },
   },
 });
