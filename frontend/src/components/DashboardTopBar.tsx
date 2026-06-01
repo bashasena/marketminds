@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useMarket } from "../market/MarketContext";
 import { MARKETS } from "../market/types";
 
-export function DashboardTopBar() {
+export function DashboardTopBar({ hideMarket = false }: { hideMarket?: boolean }) {
   const { market, setMarket } = useMarket();
   const [strategiesOpen, setStrategiesOpen] = useState(false);
   const strategiesRef = useRef<HTMLDivElement>(null);
@@ -24,21 +24,21 @@ export function DashboardTopBar() {
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
         <p className="min-w-0 text-xs font-medium uppercase tracking-widest text-slate-400">Daily market snapshot</p>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="sr-only" htmlFor="market-select">
-            Market
-          </label>
-          <select
-            id="market-select"
-            value={market}
-            onChange={(e) => setMarket(e.target.value as typeof market)}
-            className="max-w-[min(100%,220px)] rounded-lg border border-slate-600 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-          >
-            {MARKETS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
+          {!hideMarket && (
+            <>
+              <label className="sr-only" htmlFor="market-select">Market</label>
+              <select
+                id="market-select"
+                value={market}
+                onChange={(e) => setMarket(e.target.value as typeof market)}
+                className="max-w-[min(100%,220px)] rounded-lg border border-slate-600 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+              >
+                {MARKETS.map((m) => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </select>
+            </>
+          )}
           <div className="relative" ref={strategiesRef}>
             <button
               type="button"

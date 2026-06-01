@@ -743,7 +743,9 @@ def run_volume_scan(
             results.append(fut.result())
 
     all_stocks = [r for r in results if r.error is None]
-    filtered = [
+    # threshold=0 and pcr_min=0 means no filtering — return all stocks
+    no_filter = vol_threshold == 0 and pcr_min == 0
+    filtered = all_stocks if no_filter else [
         r for r in all_stocks
         if r.vol_ratio >= vol_threshold and r.pcr >= pcr_min
     ]

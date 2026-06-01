@@ -16,8 +16,8 @@ router = APIRouter(prefix="/volume", tags=["volume"])
 @router.get("/scan")
 def volume_scan(
     market: str = Query("nasdaq", description="nasdaq | sp500 | both"),
-    threshold: float = Query(1.5, ge=1.0, le=10.0, description="Volume ratio threshold (e.g. 1.5 = 1.5× avg)"),
-    pcr_min: float = Query(0.7, ge=0.0, le=5.0, description="Minimum PCR filter"),
+    threshold: float = Query(0.0, ge=0.0, le=10.0, description="Volume ratio threshold — 0 returns all stocks, 1.5 = 1.5× avg"),
+    pcr_min: float = Query(0.0, ge=0.0, le=5.0, description="Minimum PCR filter"),
 ):
     """Scan for volume surges across NASDAQ 100 and S&P 500 using Yahoo Finance chart API."""
     result = run_volume_scan(market=market, vol_threshold=threshold, pcr_min=pcr_min)
