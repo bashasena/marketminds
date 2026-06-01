@@ -34,7 +34,8 @@ type WatchEntry = {
 type Toast = { id: number; sym: string; msg: string };
 type LogEntry = { time: string; msg: string; type: "info" | "alert" | "warn" };
 
-const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const POLL_INTERVAL_MS = 5 * 60 * 1000;   // watchlist frontend refresh
+const SCAN_INTERVAL_MS = 5 * 60 * 1000;   // scanner auto-refresh
 
 function fmt(n: number) {
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
@@ -62,6 +63,8 @@ export function VolumeStrategyPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [search, setSearch] = useState("");
   const [watchSearch, setWatchSearch] = useState("");
+  const [scanCountdown, setScanCountdown] = useState(SCAN_INTERVAL_MS / 1000);
+  const scanCountdownRef = useRef(SCAN_INTERVAL_MS / 1000);
 
   // Server-side watchlist state
   const [watchlist, setWatchlist] = useState<WatchEntry[]>([]);
@@ -194,6 +197,9 @@ export function VolumeStrategyPage() {
   // ─── Scanner ─────────────────────────────────────────────────────────────────
 
   const runScan = useCallback(async () => {
+    // Reset countdown whenever a scan starts (manual or auto)
+    scanCountdownRef.current = SCAN_INTERVAL_MS / 1000;
+    setScanCountdown(SCAN_INTERVAL_MS / 1000);
     setScanning(true);
     setStatusColor("#f5a623");
     setEmptyMessage("Fetching live volume data...");
@@ -280,9 +286,38 @@ export function VolumeStrategyPage() {
     return q ? watchlist.filter((e) => e.sym.toLowerCase().includes(q) || e.name.toLowerCase().includes(q)) : watchlist;
   }, [watchlist, watchSearch]);
 
+  // Initial scan on mount
   useEffect(() => {
     void runScan();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- initial scan on mount
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-scan every 5 min + 1-second countdown ticker
+  useEffect(() => {
+    scanCountdownRef.current = SCAN_INTERVAL_MS / 1000;
+    setScanCountdown(SCAN_INTERVAL_MS / 1000);
+
+    // 1-second ticker for the countdown display
+    const ticker = setInterval(() => {
+      scanCountdownRef.current -= 1;
+      setScanCountdown(scanCountdownRef.current);
+      if (scanCountdownRef.current <= 0) {
+        scanCountdownRef.current = SCAN_INTERVAL_MS / 1000;
+        setScanCountdown(SCAN_INTERVAL_MS / 1000);
+      }
+    }, 1000);
+
+    // Auto-scan trigger
+    const scanner = setInterval(() => {
+      void runScan();
+      scanCountdownRef.current = SCAN_INTERVAL_MS / 1000;
+      setScanCountdown(SCAN_INTERVAL_MS / 1000);
+    }, SCAN_INTERVAL_MS);
+
+    return () => {
+      clearInterval(ticker);
+      clearInterval(scanner);
+    };
+  }, [runScan]);
 
   const logColor = (type: LogEntry["type"]) =>
     type === "alert" ? "#00c896" : type === "warn" ? "#f5a623" : "#94a3b8";
@@ -371,6 +406,11 @@ export function VolumeStrategyPage() {
               >
                 {scanning ? "Scanning…" : "Scan Now"}
               </button>
+              {!scanning && (
+                <span className="text-[11px] text-slate-500 tabular-nums">
+                  next in {Math.floor(scanCountdown / 60)}:{String(scanCountdown % 60).padStart(2, "0")}
+                </span>
+              )}
               <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-400 select-none">
                 <input
                   type="checkbox"
@@ -417,7 +457,7 @@ export function VolumeStrategyPage() {
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
                   🔔 Alert Watchlist
                   <span className="ml-2 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] text-emerald-400">
-                    refreshes every 5 min
+                    live refresh every 5 min
                   </span>
                   <span className="ml-1.5 rounded-full bg-slate-700 px-2 py-0.5 text-[10px] text-slate-300">
                     {watchlist.length} watching

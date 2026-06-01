@@ -420,9 +420,9 @@ export function AdminPage() {
 
           {/* ─── PCR Refresh Interval ─────────────────────────────────────────── */}
           <div className="border-t border-slate-800 pt-6">
-            <p className="text-xs font-medium uppercase tracking-widest text-slate-500">Volume Scanner — PCR Refresh Interval</p>
+            <p className="text-xs font-medium uppercase tracking-widest text-slate-500">Watchlist — Refresh &amp; Alert Interval</p>
             <p className="mt-1 text-sm text-slate-400">
-              How often the backend refreshes Put/Call Ratio data for all watched symbols in the Alert Watchlist.
+              How often the backend fetches fresh volume + PCR for all watched symbols, checks thresholds, and fires Telegram alerts.
               Changes take effect immediately without restarting the server.
             </p>
             {pcrErr ? <p className="mt-2 text-sm text-rose-300">{pcrErr}</p> : null}
