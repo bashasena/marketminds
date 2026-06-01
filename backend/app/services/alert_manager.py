@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_PCR_INTERVAL = 30   # minutes
 TELEGRAM_INTERVAL_SEC = 5 * 60  # always 5 min
+
+# Daily reset fires at 13:30 UTC = 9:30 AM ET (handles both EST/EDT approximately)
+DAILY_RESET_HOUR_UTC = 13
+DAILY_RESET_MINUTE_UTC = 30
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
@@ -50,6 +54,7 @@ class AlertManager:
         self._lock = threading.Lock()
         self._pcr_timer: Optional[threading.Timer] = None
         self._tg_timer: Optional[threading.Timer] = None
+        self._reset_timer: Optional[threading.Timer] = None
         self._started = False
         self._pcr_interval_sec: int = DEFAULT_PCR_INTERVAL * 60
 
@@ -68,17 +73,20 @@ class AlertManager:
             pass
         self._schedule_pcr()
         self._schedule_telegram()
+        self._schedule_daily_reset()
         logger.info(
-            "AlertManager started — PCR refresh every %dm, Telegram check every 5m",
+            "AlertManager started — PCR refresh every %dm, Telegram check every 5m, daily reset at %02d:%02dUTC",
             self._pcr_interval_sec // 60,
+            DAILY_RESET_HOUR_UTC,
+            DAILY_RESET_MINUTE_UTC,
         )
 
     def stop(self) -> None:
         self._started = False
-        for t in (self._pcr_timer, self._tg_timer):
+        for t in (self._pcr_timer, self._tg_timer, self._reset_timer):
             if t:
                 t.cancel()
-        self._pcr_timer = self._tg_timer = None
+        self._pcr_timer = self._tg_timer = self._reset_timer = None
 
     # ── public API ───────────────────────────────────────────────────────────
 
@@ -212,6 +220,41 @@ class AlertManager:
                     )
                     row.last_crossed = new_band
             db.commit()
+
+    # ── Daily reset (market open) ─────────────────────────────────────────────
+
+    def _seconds_until_next_reset(self) -> float:
+        """Seconds until next 13:30 UTC (≈ 9:30 AM ET)."""
+        now = datetime.now(timezone.utc)
+        target = now.replace(hour=DAILY_RESET_HOUR_UTC, minute=DAILY_RESET_MINUTE_UTC, second=0, microsecond=0)
+        if target <= now:
+            target += timedelta(days=1)
+        return (target - now).total_seconds()
+
+    def _schedule_daily_reset(self) -> None:
+        delay = self._seconds_until_next_reset()
+        self._reset_timer = threading.Timer(delay, self._run_daily_reset)
+        self._reset_timer.daemon = True
+        self._reset_timer.start()
+        logger.info("Daily last_crossed reset scheduled in %.0f s (%.1f h)", delay, delay / 3600)
+
+    def _run_daily_reset(self) -> None:
+        try:
+            self._reset_last_crossed()
+        except Exception as exc:
+            logger.error("Daily reset error: %s", exc)
+        finally:
+            if self._started:
+                self._schedule_daily_reset()
+
+    def _reset_last_crossed(self) -> None:
+        """Reset last_crossed=0 for all watchlist symbols at market open so alerts re-arm for the new day."""
+        with SessionLocal() as db:
+            rows = db.query(VolumeWatchlist).all()
+            for row in rows:
+                row.last_crossed = 0
+            db.commit()
+            logger.info("Daily reset: last_crossed cleared for %d symbols", len(rows))
 
     # ── serialisation ────────────────────────────────────────────────────────
 

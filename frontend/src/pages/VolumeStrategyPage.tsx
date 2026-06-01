@@ -48,9 +48,9 @@ function formatTime(d = new Date()) {
 }
 
 export function VolumeStrategyPage() {
-  const [market, setMarket] = useState<MarketFilter>("nasdaq");
+  const [market, setMarket] = useState<MarketFilter>("both");
   const [thresh, setThresh] = useState(1.0);
-  const [pcrMin, setPcrMin] = useState(0.7);
+  const [pcrMin, setPcrMin] = useState(0);
   const [scanning, setScanning] = useState(false);
   const [statusColor, setStatusColor] = useState("#00c896");
   const [alerts, setAlerts] = useState<StockData[]>([]);
@@ -59,7 +59,7 @@ export function VolumeStrategyPage() {
   const [emptyMessage, setEmptyMessage] = useState("Run a scan to detect volume surges");
   const [sortKey, setSortKey] = useState<SortKey>("volRatio");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [showFilters, setShowFilters] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
   const [search, setSearch] = useState("");
   const [watchSearch, setWatchSearch] = useState("");
 
@@ -197,10 +197,17 @@ export function VolumeStrategyPage() {
     setScanning(true);
     setStatusColor("#f5a623");
     setEmptyMessage("Fetching live volume data...");
-    appendLog(`Scan started — market: ${market.toUpperCase()}, threshold: ${thresh}x`, "info");
+    const activeThresh = showFilters ? thresh : 0;
+    const activePcrMin = showFilters ? pcrMin : 0;
+    appendLog(
+      showFilters
+        ? `Scan started — market: ${market.toUpperCase()}, threshold: ${thresh}x, PCR min: ${pcrMin}`
+        : `Scan started — market: ${market.toUpperCase()} (no filters)`,
+      "info",
+    );
 
     try {
-      const url = `/volume/scan?market=${encodeURIComponent(market)}&threshold=${thresh}&pcr_min=${pcrMin}`;
+      const url = `/volume/scan?market=${encodeURIComponent(market)}&threshold=${activeThresh}&pcr_min=${activePcrMin}`;
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const data = (await res.json()) as {
@@ -282,7 +289,7 @@ export function VolumeStrategyPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <DashboardTopBar />
+      <DashboardTopBar hideMarket />
 
       {/* Toast container */}
       <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2">
@@ -368,7 +375,7 @@ export function VolumeStrategyPage() {
                 <input
                   type="checkbox"
                   checked={showFilters}
-                  onChange={(e) => setShowFilters(e.target.checked)}
+                  onChange={(e) => { setShowFilters(e.target.checked); setTimeout(() => void runScan(), 0); }}
                   className="h-3.5 w-3.5 accent-emerald-500"
                 />
                 Filters
@@ -392,8 +399,8 @@ export function VolumeStrategyPage() {
               <label className="ml-3">Min PCR filter:</label>
               <input
                 type="range"
-                min={0.5}
-                max={2}
+                min={0}
+                max={5}
                 step={0.1}
                 value={pcrMin}
                 onChange={(e) => setPcrMin(parseFloat(e.target.value))}
