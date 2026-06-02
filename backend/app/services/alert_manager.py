@@ -188,13 +188,24 @@ class AlertManager:
                 if row is None:
                     continue
 
+                cur_vol = float(item.get("curVol", 0))
+                avg30   = float(item.get("avg30",  0))
+
+                # Skip update if Yahoo returned bad/zero volume data (rate-limited or stale).
+                # Keep existing DB values so we never overwrite good data with zeros.
+                if cur_vol == 0 and avg30 == 0:
+                    logger.warning(
+                        "Skipping DB update for %s — zero volume returned (possible rate-limit)", sym
+                    )
+                    continue
+
                 new_ratio = float(item.get("volRatio", row.last_ratio))
                 new_band = int(new_ratio)
 
                 # Update all fields with fresh data
                 row.last_ratio   = new_ratio
-                row.last_avg30   = float(item.get("avg30",   row.last_avg30))
-                row.last_cur_vol = float(item.get("curVol",  row.last_cur_vol))
+                row.last_avg30   = avg30
+                row.last_cur_vol = cur_vol
                 row.last_pcr     = float(item.get("pcr",     row.last_pcr))
                 row.last_oi_trend = str(item.get("oiTrend",  row.last_oi_trend))
                 row.last_signal  = str(item.get("signal",    row.last_signal))

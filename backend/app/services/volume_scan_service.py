@@ -14,10 +14,17 @@ from typing import Literal
 import requests
 import yfinance as yf
 
-_YF_SESSION = requests.Session()
-_YF_SESSION.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-})
+def _make_session() -> requests.Session:
+    s = requests.Session()
+    s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+    return s
+
+# Shared session for the full bulk scanner (604 stocks, high concurrency)
+_YF_SESSION = _make_session()
+
+# Dedicated session for the watchlist refresh — kept separate so the bulk
+# scanner's connection-pool exhaustion / rate-limit doesn't zero out watchlist data
+_WATCH_SESSION = _make_session()
 
 logger = logging.getLogger(__name__)
 
@@ -790,14 +797,44 @@ _ALL_SYM_TO_NAME: dict[str, str] = {
 def run_watch_scan(symbols: list[str], max_workers: int = 10) -> list[dict]:
     """
     Scan a specific list of symbols (the user's watchlist).
+    Uses _WATCH_SESSION — a dedicated session kept separate from the bulk scanner's
+    session so connection-pool exhaustion from full scans doesn't affect watchlist data.
     Returns current vol data for each — no threshold filtering, caller decides what to alert.
     """
-    # Determine market suffix: symbols in NASDAQ list are plain, others also plain (both US markets)
     pool = [(sym, _ALL_SYM_TO_NAME.get(sym, sym), "nasdaq") for sym in symbols]
+
+    def _fetch_watch_stock(sym: str, name: str, market: str) -> VolumeScanResult:
+        """Fetch stock data using the dedicated watch session."""
+        yfin_sym = _yfin_sym(sym, market)
+        try:
+            # Use _WATCH_SESSION for volume chart fetch
+            url = f"https://query2.finance.yahoo.com/v8/finance/chart/{yfin_sym}?range=35d&interval=1d"
+            r = _WATCH_SESSION.get(url, timeout=10)
+            r.raise_for_status()
+            result = r.json()["chart"]["result"][0]
+            volumes = result["indicators"]["quote"][0].get("volume") or []
+            volumes = [v for v in volumes if v is not None and v > 0]
+            if not volumes:
+                cur_vol, avg30 = 0, 0
+            else:
+                cur_vol = int(volumes[-1])
+                avg30 = int(statistics.mean(volumes))
+            if avg30 == 0:
+                avg30 = cur_vol or 1
+            vol_ratio = round(cur_vol / avg30, 2) if avg30 > 0 else 1.0
+            pcr, oi_trend = _fetch_pcr(yfin_sym)
+            signal = _classify_signal(pcr, vol_ratio)
+            return VolumeScanResult(sym=sym, name=name, avg30=avg30, cur_vol=cur_vol,
+                                    vol_ratio=vol_ratio, pcr=pcr, oi_trend=oi_trend, signal=signal)
+        except Exception as e:
+            logger.warning("Watch scan fetch failed for %s: %s", sym, e)
+            return VolumeScanResult(sym=sym, name=name, avg30=0, cur_vol=0,
+                                    vol_ratio=0.0, pcr=1.0, oi_trend="Flat", signal="neutral",
+                                    error=str(e))
 
     results: list[VolumeScanResult] = []
     with ThreadPoolExecutor(max_workers=max_workers) as exe:
-        futures = {exe.submit(_fetch_stock, sym, name, mkt): sym for sym, name, mkt in pool}
+        futures = {exe.submit(_fetch_watch_stock, sym, name, mkt): sym for sym, name, mkt in pool}
         for fut in as_completed(futures):
             results.append(fut.result())
 
