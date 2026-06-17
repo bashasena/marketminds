@@ -62,6 +62,14 @@ export function DashboardTopBar({ hideMarket = false }: { hideMarket?: boolean }
                 >
                   Volume strategy
                 </Link>
+                <Link
+                  to="/cycle-strategy"
+                  role="menuitem"
+                  className="block px-3 py-2 text-xs text-slate-100 hover:bg-slate-800"
+                  onClick={() => setStrategiesOpen(false)}
+                >
+                  Cycle strategy
+                </Link>
               </div>
             ) : null}
           </div>
