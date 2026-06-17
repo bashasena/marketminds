@@ -15,12 +15,16 @@ router = APIRouter(prefix="/volume", tags=["volume"])
 
 @router.get("/scan")
 def volume_scan(
-    market: str = Query("nasdaq", description="nasdaq | sp500 | both"),
+    market: str = Query("nasdaq", description="nasdaq | sp500 | russell | both"),
     threshold: float = Query(0.0, ge=0.0, le=10.0, description="Volume ratio threshold — 0 returns all stocks, 1.5 = 1.5× avg"),
     pcr_min: float = Query(0.0, ge=0.0, le=5.0, description="Minimum PCR filter"),
 ):
-    """Scan for volume surges across NASDAQ 100 and S&P 500 using Yahoo Finance chart API."""
-    result = run_volume_scan(market=market, vol_threshold=threshold, pcr_min=pcr_min)
+    """Scan for volume surges across NASDAQ 100, S&P 500, or Russell 2000 (IWM) via Yahoo Finance."""
+    allowed = ("nasdaq", "sp500", "russell", "both")
+    m = market.strip().lower()
+    if m not in allowed:
+        raise HTTPException(status_code=422, detail=f"market must be one of: {', '.join(allowed)}")
+    result = run_volume_scan(market=m, vol_threshold=threshold, pcr_min=pcr_min)
     return result
 
 

@@ -1,18 +1,23 @@
 """Volume surge scanner — fetches real volume via Yahoo Finance chart API (query2).
 
-Supports full NASDAQ 100 (101 stocks) and full S&P 500 (503 stocks). No API key required.
+Supports NASDAQ 100, S&P 500, and Russell 2000 (IWM). No API key required.
 """
 
 from __future__ import annotations
 
 import logging
 import statistics
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Literal
 
+import pandas as pd
 import requests
 import yfinance as yf
+
+from app.services.russell_constituents import get_russell_2000_stocks
+from app.services.yahoo_chart_bars import fetch_chart_daily_volumes
 
 def _make_session() -> requests.Session:
     s = requests.Session()
@@ -667,26 +672,137 @@ def _classify_signal(pcr: float, vol_ratio: float) -> Signal:
 
 
 def _fetch_volume_chart(yfin_sym: str) -> tuple[int, int]:
+    """Throttled Yahoo chart API — avoids 429s from parallel raw requests."""
+    return fetch_chart_daily_volumes(yfin_sym)
+
+
+def _parse_yf_volume_df(df: pd.DataFrame, symbols: list[str]) -> dict[str, tuple[int, int]]:
+    out: dict[str, tuple[int, int]] = {}
+    if df is None or df.empty:
+        return out
+
+    if len(symbols) == 1:
+        sym = symbols[0]
+        if "Volume" in df.columns:
+            vol = df["Volume"].dropna()
+            vol = vol[vol > 0]
+            if len(vol):
+                window = vol.tail(30) if len(vol) >= 30 else vol
+                out[sym] = (int(vol.iloc[-1]), int(statistics.mean(window)))
+        return out
+
+    if not isinstance(df.columns, pd.MultiIndex):
+        return out
+
+    for sym in symbols:
+        try:
+            if sym not in df.columns.get_level_values(0):
+                continue
+            vol = df[sym]["Volume"].dropna()
+            vol = vol[vol > 0]
+            if len(vol):
+                window = vol.tail(30) if len(vol) >= 30 else vol
+                out[sym] = (int(vol.iloc[-1]), int(statistics.mean(window)))
+        except Exception:
+            continue
+    return out
+
+
+def _fetch_volumes_batch_yfinance(symbols: list[str], *, chunk_size: int = 100) -> dict[str, tuple[int, int]]:
     """
-    Fetch (current_volume, avg30_volume) via Yahoo Finance chart API (query2).
-    Uses a custom User-Agent to avoid rate-limiting that affects the yfinance wrapper.
-    Returns (0, 0) on failure.
+    Batch-fetch daily volumes for many US tickers (Russell 2000).
+    Sequential chunks avoid Yahoo 429 rate limits from ~2000 parallel chart GETs.
     """
-    url = f"https://query2.finance.yahoo.com/v8/finance/chart/{yfin_sym}?range=35d&interval=1d"
-    try:
-        r = _YF_SESSION.get(url, timeout=10)
-        r.raise_for_status()
-        result = r.json()["chart"]["result"][0]
-        volumes = result["indicators"]["quote"][0].get("volume") or []
-        volumes = [v for v in volumes if v is not None and v > 0]
-        if not volumes:
-            return 0, 0
-        cur_vol = int(volumes[-1])
-        avg30 = int(statistics.mean(volumes))
-        return cur_vol, avg30
-    except Exception as e:
-        logger.debug("Chart API volume fetch failed for %s: %s", yfin_sym, e)
-        return 0, 0
+    out: dict[str, tuple[int, int]] = {}
+    chunks = [symbols[i : i + chunk_size] for i in range(0, len(symbols), chunk_size)]
+    logger.info("Russell volume batch: %d symbols in %d chunks", len(symbols), len(chunks))
+
+    for idx, chunk in enumerate(chunks):
+        try:
+            df = yf.download(
+                chunk,
+                period="35d",
+                interval="1d",
+                group_by="ticker",
+                progress=False,
+                threads=False,
+            )
+            out.update(_parse_yf_volume_df(df, chunk))
+        except Exception as e:
+            logger.warning("Russell volume batch chunk %s/%s failed: %s", idx + 1, len(chunks), e)
+        if idx < len(chunks) - 1:
+            time.sleep(0.6)
+
+    logger.info("Russell volume batch: got data for %d / %d symbols", len(out), len(symbols))
+    return out
+
+
+def _result_from_volumes(
+    sym: str,
+    name: str,
+    cur_vol: int,
+    avg30: int,
+    *,
+    skip_pcr: bool,
+    market: str = "nasdaq",
+) -> VolumeScanResult:
+    if cur_vol <= 0:
+        return VolumeScanResult(
+            sym=sym,
+            name=name,
+            avg30=0,
+            cur_vol=0,
+            vol_ratio=0.0,
+            pcr=0.0 if skip_pcr else 1.0,
+            oi_trend="N/A" if skip_pcr else "Flat",
+            signal="neutral",
+            error="no_volume_data",
+        )
+
+    if avg30 <= 0:
+        avg30 = cur_vol
+    vol_ratio = round(cur_vol / avg30, 2)
+    yfin_sym = _yfin_sym(sym, market)
+    if skip_pcr:
+        return VolumeScanResult(
+            sym=sym,
+            name=name,
+            avg30=avg30,
+            cur_vol=cur_vol,
+            vol_ratio=vol_ratio,
+            pcr=0.0,
+            oi_trend="N/A",
+            signal="neutral",
+        )
+
+    pcr, oi_trend = _fetch_pcr(yfin_sym)
+    signal = _classify_signal(pcr, vol_ratio)
+    return VolumeScanResult(
+        sym=sym,
+        name=name,
+        avg30=avg30,
+        cur_vol=cur_vol,
+        vol_ratio=vol_ratio,
+        pcr=pcr,
+        oi_trend=oi_trend,
+        signal=signal,
+    )
+
+
+def _run_russell_scan(
+    vol_threshold: float,
+    pcr_min: float,
+) -> list[VolumeScanResult]:
+    russell = get_russell_2000_stocks()
+    symbols = [sym for sym, _ in russell]
+    vol_map = _fetch_volumes_batch_yfinance(symbols)
+    results: list[VolumeScanResult] = []
+    for sym, name in russell:
+        cur_vol, avg30 = vol_map.get(sym, (0, 0))
+        results.append(
+            _result_from_volumes(sym, name, cur_vol, avg30, skip_pcr=True),
+        )
+    return results
 
 
 def _fetch_pcr(yfin_sym: str) -> tuple[float, str]:
@@ -709,17 +825,11 @@ def _fetch_pcr(yfin_sym: str) -> tuple[float, str]:
         return 1.0, "Flat"
 
 
-def _fetch_stock(sym: str, name: str, market: str) -> VolumeScanResult:
+def _fetch_stock(sym: str, name: str, market: str, *, skip_pcr: bool = False) -> VolumeScanResult:
     yfin_sym = _yfin_sym(sym, market)
     try:
         cur_vol, avg30 = _fetch_volume_chart(yfin_sym)
-        if avg30 == 0:
-            avg30 = cur_vol or 1
-        vol_ratio = round(cur_vol / avg30, 2) if avg30 > 0 else 1.0
-        pcr, oi_trend = _fetch_pcr(yfin_sym)
-        signal = _classify_signal(pcr, vol_ratio)
-        return VolumeScanResult(sym=sym, name=name, avg30=avg30, cur_vol=cur_vol,
-                                vol_ratio=vol_ratio, pcr=pcr, oi_trend=oi_trend, signal=signal)
+        return _result_from_volumes(sym, name, cur_vol, avg30, skip_pcr=skip_pcr, market=market)
     except Exception as e:
         logger.warning("Volume scan failed for %s: %s", sym, e)
         return VolumeScanResult(sym=sym, name=name, avg30=0, cur_vol=0,
@@ -734,27 +844,34 @@ def run_volume_scan(
 ) -> dict:
     """
     Scan stocks for volume surges.
-    market: "nasdaq" | "sp500" | "both"
+    market: "nasdaq" | "sp500" | "russell" | "both"
     Returns dict with scanned list, filtered alerts, and summary metrics.
     """
     pool: list[tuple[str, str, str]] = []
-    if market in ("nasdaq", "both"):
-        pool += [(sym, name, "nasdaq") for sym, name in NASDAQ_STOCKS]
-    if market in ("sp500", "both"):
-        pool += [(sym, name, "sp500") for sym, name in SP500_STOCKS]
+    skip_pcr = False
+    if market == "russell":
+        skip_pcr = True
+        results = _run_russell_scan(vol_threshold, pcr_min)
+    else:
+        if market in ("nasdaq", "both"):
+            pool += [(sym, name, "nasdaq") for sym, name in NASDAQ_STOCKS]
+        if market in ("sp500", "both"):
+            pool += [(sym, name, "sp500") for sym, name in SP500_STOCKS]
 
-    results: list[VolumeScanResult] = []
-    with ThreadPoolExecutor(max_workers=max_workers) as exe:
-        futures = {exe.submit(_fetch_stock, sym, name, mkt): sym for sym, name, mkt in pool}
-        for fut in as_completed(futures):
-            results.append(fut.result())
+        results = []
+        with ThreadPoolExecutor(max_workers=max_workers) as exe:
+            futures = {
+                exe.submit(_fetch_stock, sym, name, mkt, skip_pcr=skip_pcr): sym for sym, name, mkt in pool
+            }
+            for fut in as_completed(futures):
+                results.append(fut.result())
 
-    all_stocks = [r for r in results if r.error is None]
+    all_stocks = [r for r in results if r.error is None and r.cur_vol > 0]
     # threshold=0 and pcr_min=0 means no filtering — return all stocks
     no_filter = vol_threshold == 0 and pcr_min == 0
     filtered = all_stocks if no_filter else [
         r for r in all_stocks
-        if r.vol_ratio >= vol_threshold and r.pcr >= pcr_min
+        if r.vol_ratio >= vol_threshold and (skip_pcr or r.pcr >= pcr_min)
     ]
     filtered.sort(key=lambda r: r.vol_ratio, reverse=True)
 
@@ -774,6 +891,7 @@ def run_volume_scan(
         }
 
     errors = [{"sym": r.sym, "error": r.error} for r in results if r.error]
+    skipped = sum(1 for r in results if r.error == "no_volume_data")
 
     return {
         "scanned": len(all_stocks),
@@ -783,15 +901,30 @@ def run_volume_scan(
             "alertCount": len(filtered),
             "bullish": bull,
             "bearish": bear,
+            "skippedNoData": skipped,
         },
         "errors": errors,
+        "market": market,
+        "pcrIncluded": not skip_pcr,
     }
 
 
-# Build a combined symbol→name lookup from both lists
+# Build a combined symbol→name lookup from index lists (Russell resolved on demand)
 _ALL_SYM_TO_NAME: dict[str, str] = {
     sym: name for sym, name in NASDAQ_STOCKS + SP500_STOCKS
 }
+
+
+def _sym_name_lookup(sym: str) -> str:
+    if sym in _ALL_SYM_TO_NAME:
+        return _ALL_SYM_TO_NAME[sym]
+    try:
+        for s, n in get_russell_2000_stocks():
+            if s == sym:
+                return n
+    except Exception:
+        pass
+    return sym
 
 
 def run_watch_scan(symbols: list[str], max_workers: int = 10) -> list[dict]:
@@ -801,7 +934,7 @@ def run_watch_scan(symbols: list[str], max_workers: int = 10) -> list[dict]:
     session so connection-pool exhaustion from full scans doesn't affect watchlist data.
     Returns current vol data for each — no threshold filtering, caller decides what to alert.
     """
-    pool = [(sym, _ALL_SYM_TO_NAME.get(sym, sym), "nasdaq") for sym in symbols]
+    pool = [(sym, _sym_name_lookup(sym), "nasdaq") for sym in symbols]
 
     def _fetch_watch_stock(sym: str, name: str, market: str) -> VolumeScanResult:
         """Fetch stock data using the dedicated watch session."""
