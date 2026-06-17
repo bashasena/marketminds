@@ -356,3 +356,26 @@ def chart_last_and_pct(symbol: str) -> tuple[float | None, float | None] | None:
             if c is not None:
                 return float(c), pct
     return None
+
+
+def fetch_chart_daily_volumes(symbol: str, timeout: float = 25.0) -> tuple[int, int]:
+    """
+    Return (latest daily volume, mean daily volume over recent bars) via throttled chart API.
+    Returns (0, 0) when data is unavailable.
+    """
+    import statistics
+
+    for rng in ("3mo", "1mo", "35d"):
+        block = _get_chart_block(symbol, range_=rng, interval="1d", timeout=timeout)
+        if block is None:
+            continue
+        ind = (block.get("indicators") or {}).get("quote")
+        if not ind or not isinstance(ind, list) or not ind[0]:
+            continue
+        raw = ind[0].get("volume") or []
+        volumes = [int(v) for v in raw if v is not None and float(v) > 0]
+        if not volumes:
+            continue
+        window = volumes[-30:] if len(volumes) >= 30 else volumes
+        return int(volumes[-1]), int(statistics.mean(window))
+    return 0, 0

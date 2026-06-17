@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { DashboardTopBar } from "../components/DashboardTopBar";
 
-type MarketFilter = "nasdaq" | "sp500" | "both";
+type MarketFilter = "nasdaq" | "sp500" | "russell" | "both";
 type Signal = "bullish" | "bearish" | "neutral";
 type SortKey = "volRatio" | "sym" | "pcr" | "curVol" | "signal";
 type SortDir = "desc" | "asc";
@@ -202,7 +202,9 @@ export function VolumeStrategyPage() {
     setScanCountdown(SCAN_INTERVAL_MS / 1000);
     setScanning(true);
     setStatusColor("#f5a623");
-    setEmptyMessage("Fetching live volume data...");
+    setEmptyMessage(
+      market === "russell" ? "Fetching Russell 2000 volume data (~1,900 stocks)…" : "Fetching live volume data...",
+    );
     const activeThresh = showFilters ? thresh : 0;
     const activePcrMin = showFilters ? pcrMin : 0;
     appendLog(
@@ -237,7 +239,10 @@ export function VolumeStrategyPage() {
       setStatusColor("#00c896");
       setEmptyMessage(filtered.length === 0 ? `No stocks exceed ${thresh}x volume threshold right now` : "");
 
-      appendLog(`Scan complete — ${m.scanned ?? "?"} scanned, ${filtered.length} alerts fired`, "alert");
+      appendLog(`Scan complete — ${m.scanned ?? "?"} with volume, ${filtered.length} shown`, "alert");
+      if (m.skippedNoData) {
+        appendLog(`${m.skippedNoData} symbol(s) skipped (no volume / delisted)`, "info");
+      }
       filtered.forEach((s) =>
         appendLog(`ALERT: ${s.sym} — Vol ${s.volRatio}x avg | PCR ${s.pcr} | ${s.signal.toUpperCase()}`, "warn"),
       );
@@ -396,8 +401,14 @@ export function VolumeStrategyPage() {
               >
                 <option value="nasdaq">NASDAQ 100</option>
                 <option value="sp500">S&amp;P 500</option>
-                <option value="both">Both Markets</option>
+                <option value="russell">Russell 2000 (IWM)</option>
+                <option value="both">NASDAQ + S&amp;P 500</option>
               </select>
+              {market === "russell" ? (
+                <span className="text-[11px] text-slate-500">
+                  ~1,900 stocks · scan may take a few minutes · PCR via + Alert / watchlist
+                </span>
+              ) : null}
               <button
                 type="button"
                 onClick={() => void runScan()}
@@ -677,8 +688,9 @@ export function VolumeStrategyPage() {
                 const avgPct = Math.round((s.avg30 / scale) * 100);
                 const dailyColor =
                   s.signal === "bullish" ? "#00c896" : s.signal === "bearish" ? "#ff4f4f" : "#f5a623";
-                const pcrClass = s.pcr < 0.8 ? "bull" : s.pcr > 1.3 ? "bear" : "neut";
-                const pcrLabel = s.pcr < 0.8 ? "Bullish" : s.pcr > 1.3 ? "Bearish" : "Neutral";
+                const pcrUnavailable = s.pcr <= 0 || s.oiTrend === "N/A";
+                const pcrClass = pcrUnavailable ? "neut" : s.pcr < 0.8 ? "bull" : s.pcr > 1.3 ? "bear" : "neut";
+                const pcrLabel = pcrUnavailable ? "N/A" : s.pcr < 0.8 ? "Bullish" : s.pcr > 1.3 ? "Bearish" : "Neutral";
                 const oiColor =
                   s.oiTrend === "Rising" ? "#00c896" : s.oiTrend === "Falling" ? "#ff4f4f" : "#94a3b8";
                 const watched = isWatched(s.sym);
@@ -729,7 +741,7 @@ export function VolumeStrategyPage() {
                             : "bg-amber-500/10 text-amber-400"
                       }`}
                     >
-                      {s.pcr}
+                      {pcrUnavailable ? "—" : s.pcr}
                       <br />
                       <span className="text-[10px] opacity-70">{pcrLabel}</span>
                     </span>
