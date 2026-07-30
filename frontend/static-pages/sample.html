@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sample static page</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: #0f172a;
+        color: #e2e8f0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+      }
+      .card {
+        max-width: 32rem;
+        width: 100%;
+        border: 1px solid #334155;
+        border-radius: 1rem;
+        background: #1e293b;
+        padding: 2rem;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+      }
+      h1 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-bottom: 0.75rem;
+      }
+      p {
+        color: #94a3b8;
+        line-height: 1.6;
+        margin-bottom: 1rem;
+      }
+      code {
+        font-family: ui-monospace, monospace;
+        font-size: 0.85em;
+        background: #0f172a;
+        padding: 0.15rem 0.4rem;
+        border-radius: 0.25rem;
+        color: #7dd3fc;
+      }
+      a {
+        color: #34d399;
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      .links {
+        margin-top: 1.5rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Sample static page</h1>
+      <p>
+        This file lives in <code>frontend/static-pages/</code>. After deploy it is served directly at
+        <code>/sample.html</code> — no React router involved.
+      </p>
+      <p>
+        Add more <code>.html</code> files to that folder, rebuild the <code>web</code> container, and open them as
+        <code>https://your-domain/your-file.html</code>.
+      </p>
+      <div class="links">
+        <a href="/">← Dashboard</a>
+        <a href="/volume-strategy">Volume strategy</a>
+      </div>
+    </div>
+  </body>
+</html>
