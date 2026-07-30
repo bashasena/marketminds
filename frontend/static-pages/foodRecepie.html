@@ -1,0 +1,757 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Biriyani Ingredient Calculator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Nunito:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        /* ─────────────────────────────────────────
+           RESET & TOKENS
+        ───────────────────────────────────────── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --saffron:     #E8920A;
+            --saffron-lt:  #F4B642;
+            --saffron-dk:  #B96F06;
+            --crimson:     #8B1A1A;
+            --crimson-lt:  #C23030;
+            --gold:        #D4A017;
+            --gold-lt:     #EFC84A;
+            --cream:       #FDF6E3;
+            --cream-dk:    #F5E8C8;
+            --cream-dkr:   #EDD9A3;
+            --espresso:    #2C1810;
+            --espresso-lt: #4A2C1A;
+            --moss:        #3D6B4F;
+            --moss-lt:     #5A9070;
+            --warm-white:  #FFFBF2;
+            --border:      rgba(212,160,23,0.25);
+            --shadow-card: 0 6px 32px rgba(44,24,16,0.11);
+            --shadow-lift: 0 14px 48px rgba(44,24,16,0.18);
+            --r-sm:        8px;
+            --r-md:        16px;
+            --r-lg:        24px;
+            --r-xl:        32px;
+        }
+
+        html { font-size: 16px; scroll-behavior: smooth; }
+
+        body {
+            font-family: 'Nunito', sans-serif;
+            background: var(--cream);
+            color: var(--espresso);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ─────────────────────────────────────────
+           HERO HEADER
+        ───────────────────────────────────────── */
+        .hero {
+            background:
+                radial-gradient(ellipse at 15% 60%, rgba(232,146,10,0.38) 0%, transparent 55%),
+                radial-gradient(ellipse at 85% 20%, rgba(139,26,26,0.28) 0%, transparent 50%),
+                radial-gradient(ellipse at 55% 90%, rgba(61,107,79,0.22) 0%, transparent 45%),
+                linear-gradient(145deg, #1A0C06 0%, #2C1810 45%, #3D1E0E 75%, #5C2A10 100%);
+            position: relative;
+            padding: 64px 48px 96px;
+            overflow: hidden;
+        }
+
+        /* Dot-grid texture */
+        .hero::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image: radial-gradient(circle, rgba(212,160,23,0.14) 1px, transparent 0);
+            background-size: 30px 30px;
+            pointer-events: none;
+        }
+
+        /* Decorative ring */
+        .hero-ring {
+            position: absolute;
+            right: -100px;
+            top: -100px;
+            width: 460px;
+            height: 460px;
+            border-radius: 50%;
+            border: 1.5px solid rgba(212,160,23,0.18);
+            box-shadow:
+                0 0 0 50px rgba(212,160,23,0.04),
+                0 0 0 110px rgba(232,146,10,0.025),
+                inset 0 0 100px rgba(232,146,10,0.08);
+            pointer-events: none;
+        }
+
+        /* Second ring */
+        .hero-ring-2 {
+            position: absolute;
+            left: -60px;
+            bottom: -80px;
+            width: 280px;
+            height: 280px;
+            border-radius: 50%;
+            border: 1px solid rgba(212,160,23,0.1);
+            box-shadow: 0 0 0 40px rgba(212,160,23,0.03);
+            pointer-events: none;
+        }
+
+        .hero-inner {
+            position: relative;
+            z-index: 2;
+            max-width: 920px;
+            margin: 0 auto;
+        }
+
+        .hero-eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(212,160,23,0.12);
+            border: 1px solid rgba(212,160,23,0.35);
+            border-radius: 100px;
+            padding: 5px 16px;
+            margin-bottom: 22px;
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--gold-lt);
+            backdrop-filter: blur(4px);
+        }
+
+        .hero-eyebrow-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--saffron);
+            animation: pulse 2s ease infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50%       { opacity: 0.5; transform: scale(0.7); }
+        }
+
+        .hero-title {
+            font-family: 'Playfair Display', serif;
+            font-size: clamp(2.6rem, 5.5vw, 4.2rem);
+            font-weight: 900;
+            line-height: 1.08;
+            color: var(--warm-white);
+            margin-bottom: 18px;
+            letter-spacing: -0.01em;
+        }
+
+        .hero-title em {
+            font-style: italic;
+            color: var(--saffron-lt);
+            display: block;
+        }
+
+        .hero-sub {
+            font-size: 1rem;
+            color: rgba(255,251,242,0.58);
+            font-weight: 400;
+            max-width: 440px;
+            line-height: 1.7;
+            margin-bottom: 32px;
+        }
+
+        .hero-stats {
+            display: flex;
+            gap: 32px;
+            flex-wrap: wrap;
+        }
+
+        .stat {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .stat-num {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--gold-lt);
+            line-height: 1;
+        }
+
+        .stat-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(255,251,242,0.4);
+        }
+
+        .stat-divider {
+            width: 1px;
+            background: rgba(212,160,23,0.2);
+            align-self: stretch;
+        }
+
+        /* ─────────────────────────────────────────
+           PAGE WRAPPER
+        ───────────────────────────────────────── */
+        .page {
+            max-width: 920px;
+            margin: 0 auto;
+            padding: 0 24px 80px;
+            transform: translateY(-40px);
+        }
+
+        /* ─────────────────────────────────────────
+           CONTROL CARD
+        ───────────────────────────────────────── */
+        .card {
+            background: var(--warm-white);
+            border-radius: var(--r-lg);
+            box-shadow: var(--shadow-lift);
+            border: 1px solid rgba(212,160,23,0.12);
+            overflow: hidden;
+        }
+
+        .card + .card { margin-top: 24px; }
+
+        .card-topbar {
+            height: 4px;
+            background: linear-gradient(90deg, var(--saffron) 0%, var(--crimson) 50%, var(--moss) 100%);
+        }
+
+        .card-body {
+            padding: 32px 36px;
+        }
+
+        .card-heading {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--espresso);
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .card-heading-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--saffron), var(--gold));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .card-heading-icon svg {
+            width: 16px;
+            height: 16px;
+            fill: white;
+        }
+
+        .card-heading-line {
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(90deg, var(--border), transparent);
+        }
+
+        /* ─────────────────────────────────────────
+           CONTROLS
+        ───────────────────────────────────────── */
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 20px;
+            align-items: end;
+        }
+
+        .ctrl-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .ctrl-label {
+            font-size: 0.74rem;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--espresso-lt);
+            opacity: 0.8;
+        }
+
+        .ctrl-or {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            padding-bottom: 4px;
+            gap: 6px;
+            color: var(--espresso-lt);
+            opacity: 0.4;
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+
+        .ctrl-or-line {
+            width: 1px;
+            height: 24px;
+            background: var(--border);
+        }
+
+        select,
+        input[type="number"] {
+            padding: 13px 18px;
+            font-size: 0.97rem;
+            font-family: 'Nunito', sans-serif;
+            font-weight: 700;
+            background: var(--cream);
+            border: 2px solid rgba(212,160,23,0.22);
+            border-radius: var(--r-sm);
+            color: var(--espresso);
+            cursor: pointer;
+            transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+            outline: none;
+            width: 100%;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        select {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='7' fill='none'%3E%3Cpath d='M1 1l4.5 4.5L10 1' stroke='%23B96F06' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 14px center;
+            padding-right: 40px;
+        }
+
+        select:hover, select:focus,
+        input[type="number"]:hover, input[type="number"]:focus {
+            border-color: var(--saffron);
+            background-color: var(--warm-white);
+            box-shadow: 0 0 0 3px rgba(232,146,10,0.13);
+        }
+
+        /* ─────────────────────────────────────────
+           RESULT CARD HEADER
+        ───────────────────────────────────────── */
+        .result-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 32px;
+            background: linear-gradient(130deg, var(--espresso) 0%, #3D1E0E 100%);
+            border-bottom: 1px solid rgba(212,160,23,0.18);
+        }
+
+        .result-header-left {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .result-title {
+            font-family: 'Playfair Display', serif;
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: var(--warm-white);
+        }
+
+        .result-subtitle {
+            font-size: 0.78rem;
+            color: rgba(255,251,242,0.42);
+            font-weight: 600;
+        }
+
+        .result-pill {
+            background: rgba(232,146,10,0.18);
+            border: 1px solid rgba(232,146,10,0.38);
+            border-radius: 100px;
+            padding: 6px 18px;
+            font-size: 0.82rem;
+            font-weight: 800;
+            color: var(--saffron-lt);
+            letter-spacing: 0.04em;
+            transition: all 0.25s ease;
+        }
+
+        /* ─────────────────────────────────────────
+           TABLE
+        ───────────────────────────────────────── */
+        .table-scroll { overflow-x: auto; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead tr {
+            background: linear-gradient(90deg, #F2E4C4, var(--cream-dk));
+        }
+
+        th {
+            padding: 13px 28px;
+            text-align: left;
+            font-size: 0.7rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--espresso-lt);
+            border-bottom: 2px solid rgba(212,160,23,0.22);
+        }
+
+        th:last-child { text-align: right; }
+
+        tbody tr {
+            border-bottom: 1px solid rgba(212,160,23,0.07);
+            transition: background 0.14s;
+            animation: rowIn 0.35s ease both;
+        }
+
+        @keyframes rowIn {
+            from { opacity: 0; transform: translateX(-6px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+
+        tbody tr:nth-child(even) { background: rgba(253,246,227,0.55); }
+        tbody tr:hover { background: rgba(232,146,10,0.07) !important; }
+        tbody tr:last-child { border-bottom: none; }
+
+        td {
+            padding: 12px 28px;
+            font-size: 0.93rem;
+            font-weight: 500;
+            color: var(--espresso);
+        }
+
+        td:last-child {
+            text-align: right;
+            font-weight: 800;
+            font-size: 1rem;
+            color: var(--saffron-dk);
+            font-family: 'Playfair Display', serif;
+            font-style: italic;
+        }
+
+        .ing-cell {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .ing-pip {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .ing-name {
+            font-weight: 600;
+        }
+
+        .ing-unit {
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            padding: 2px 7px;
+            border-radius: 4px;
+            background: rgba(212,160,23,0.12);
+            color: var(--saffron-dk);
+            margin-left: 2px;
+        }
+
+        /* Rotating pip colors */
+        .pip-saffron { background: var(--saffron); }
+        .pip-crimson { background: var(--crimson-lt); }
+        .pip-moss    { background: var(--moss-lt); }
+        .pip-gold    { background: var(--gold); }
+
+        /* ─────────────────────────────────────────
+           TABLE FOOTER ROW
+        ───────────────────────────────────────── */
+        .table-foot {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 28px;
+            background: var(--cream-dk);
+            border-top: 1px solid rgba(212,160,23,0.15);
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: var(--espresso-lt);
+            opacity: 0.75;
+        }
+
+        /* ─────────────────────────────────────────
+           PAGE FOOTER
+        ───────────────────────────────────────── */
+        footer {
+            text-align: center;
+            padding: 0 24px 48px;
+            font-size: 0.78rem;
+            color: var(--espresso-lt);
+            opacity: 0.4;
+            font-style: italic;
+        }
+
+        /* ─────────────────────────────────────────
+           RESPONSIVE
+        ───────────────────────────────────────── */
+        @media (max-width: 640px) {
+            .hero { padding: 48px 24px 80px; }
+
+            .hero-stats { gap: 20px; }
+            .stat-divider { display: none; }
+
+            .page { padding: 0 16px 60px; }
+
+            .card-body { padding: 24px 20px; }
+
+            .controls-grid {
+                grid-template-columns: 1fr;
+                gap: 14px;
+            }
+            .ctrl-or {
+                flex-direction: row;
+                align-items: center;
+                justify-content: flex-start;
+                padding-bottom: 0;
+            }
+            .ctrl-or-line { width: 24px; height: 1px; }
+
+            .result-header { padding: 16px 20px; flex-wrap: wrap; gap: 10px; }
+            th, td { padding: 11px 16px; }
+        }
+
+        /* Entrance animations */
+        .hero-eyebrow  { animation: fadeDown 0.5s ease both; }
+        .hero-title    { animation: fadeDown 0.55s 0.06s ease both; }
+        .hero-sub      { animation: fadeDown 0.55s 0.12s ease both; }
+        .hero-stats    { animation: fadeDown 0.55s 0.18s ease both; }
+        .card          { animation: fadeUp 0.5s 0.1s ease both; }
+
+        @keyframes fadeDown {
+            from { opacity: 0; transform: translateY(-14px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(18px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Row stagger delays */
+        tbody tr:nth-child(1)  { animation-delay: 0.02s; }
+        tbody tr:nth-child(2)  { animation-delay: 0.04s; }
+        tbody tr:nth-child(3)  { animation-delay: 0.07s; }
+        tbody tr:nth-child(4)  { animation-delay: 0.09s; }
+        tbody tr:nth-child(5)  { animation-delay: 0.12s; }
+        tbody tr:nth-child(6)  { animation-delay: 0.14s; }
+        tbody tr:nth-child(7)  { animation-delay: 0.17s; }
+        tbody tr:nth-child(8)  { animation-delay: 0.19s; }
+        tbody tr:nth-child(9)  { animation-delay: 0.22s; }
+        tbody tr:nth-child(10) { animation-delay: 0.24s; }
+        tbody tr:nth-child(11) { animation-delay: 0.27s; }
+        tbody tr:nth-child(12) { animation-delay: 0.29s; }
+        tbody tr:nth-child(13) { animation-delay: 0.32s; }
+        tbody tr:nth-child(14) { animation-delay: 0.34s; }
+        tbody tr:nth-child(15) { animation-delay: 0.37s; }
+        tbody tr:nth-child(16) { animation-delay: 0.39s; }
+        tbody tr:nth-child(17) { animation-delay: 0.42s; }
+    </style>
+</head>
+<body>
+
+<!-- ══════════════ HERO ══════════════ -->
+<header class="hero">
+    <div class="hero-ring" aria-hidden="true"></div>
+    <div class="hero-ring-2" aria-hidden="true"></div>
+    <div class="hero-inner">
+        <div class="hero-eyebrow">
+            <span class="hero-eyebrow-dot"></span>
+            Authentic Basha Biriyani
+        </div>
+        <h1 class="hero-title">
+            Biriyani
+            <em>Ingredient Calculator</em>
+        </h1>
+        <p class="hero-sub">
+            Scale your perfect biriyani recipe from intimate dinners to grand feasts — every spice, precisely measured.
+        </p>
+        <div class="hero-stats">
+            <div class="stat">
+                <span class="stat-num">17</span>
+                <span class="stat-label">Ingredients</span>
+            </div>
+            <div class="stat-divider" aria-hidden="true"></div>
+            <div class="stat">
+                <span class="stat-num">10</span>
+                <span class="stat-label">Presets</span>
+            </div>
+            <div class="stat-divider" aria-hidden="true"></div>
+            <div class="stat">
+                <span class="stat-num">∞</span>
+                <span class="stat-label">Custom Sizes</span>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- ══════════════ PAGE ══════════════ -->
+<main class="page">
+
+    <!-- CONTROL CARD -->
+    <div class="card">
+        <div class="card-topbar"></div>
+        <div class="card-body">
+            <div class="card-heading">
+                <div class="card-heading-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+                </div>
+                Choose Rice Quantity
+                <span class="card-heading-line" aria-hidden="true"></span>
+            </div>
+            <div class="controls-grid">
+                <div class="ctrl-group">
+                    <label class="ctrl-label" for="riceDropdown">Select Preset</label>
+                    <select id="riceDropdown" onchange="setRiceFromDropdown()">
+                        <option value="1">1 KG</option>
+                        <option value="1.1">1.1 KG</option>
+                        <option value="1.25">1.25 KG</option>
+                        <option value="1.5">1.5 KG</option>
+                        <option value="1.6">1.6 KG</option>
+                        <option value="1.75">1.75 KG</option>
+                        <option value="2">2 KG</option>
+                        <option value="2.25">2.25 KG</option>
+                        <option value="2.5">2.5 KG</option>
+                        <option value="3">3 KG</option>
+                    </select>
+                </div>
+                <div class="ctrl-or" aria-hidden="true">
+                    <div class="ctrl-or-line"></div>
+                    or
+                    <div class="ctrl-or-line"></div>
+                </div>
+                <div class="ctrl-group">
+                    <label class="ctrl-label" for="riceInput">Custom Amount (KG)</label>
+                    <input type="number" id="riceInput" value="1" step="0.1" min="0.1" onchange="calculate()">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RESULTS CARD -->
+    <div class="card">
+        <div class="result-header">
+            <div class="result-header-left">
+                <div class="result-title">Ingredient Quantities</div>
+                <div class="result-subtitle">Sorted alphabetically · All measurements scaled</div>
+            </div>
+            <div class="result-pill" id="resultPill">For 1 KG Rice</div>
+        </div>
+        <div class="table-scroll">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Ingredient</th>
+                        <th>Quantity</th>
+                    </tr>
+                </thead>
+                <tbody id="resultTable"></tbody>
+            </table>
+        </div>
+        <div class="table-foot">
+            <span>Base proportions per 1 KG rice</span>
+            <span id="countLabel">17 ingredients</span>
+        </div>
+    </div>
+
+</main>
+
+<footer>
+    Traditional Hyderabadi Biriyani — proportions perfected over generations
+</footer>
+
+<script>
+    const base = {
+        "Cardamom (inch)": 1.35,
+        "Chicken (kg)": 1.14,
+        "Chilli Powder (g)": 18,
+        "Cloves (count)": 6.5,
+        "Coriander (g)": 36,
+        "Curd (ml)": 200,
+        "Elachi (count)": 6.5,
+        "Garam Masala (g)": 13.5,
+        "Garlic (g)": 236,
+        "Ginger (g)": 100,
+        "Green Chilli (count)": 6,
+        "Mint (g)": 36,
+        "Oil (ml)": 318,
+        "Onion (g)": 468,
+        "Rice (KG)": 1,
+        "Salt (g)": 54,
+        "Tomatoes (g)": 278
+    };
+
+    const pipClasses = ['pip-saffron', 'pip-crimson', 'pip-moss', 'pip-gold'];
+
+    function setRiceFromDropdown() {
+        const val = document.getElementById('riceDropdown').value;
+        document.getElementById('riceInput').value = val;
+        calculate();
+    }
+
+    function calculate() {
+        const rice = parseFloat(document.getElementById('riceInput').value);
+        if (!rice || rice <= 0) return;
+        const factor = rice;
+
+        document.getElementById('resultPill').textContent = 'For ' + rice + ' KG Rice';
+
+        const tbody = document.getElementById('resultTable');
+        tbody.innerHTML = '';
+
+        const sortedKeys = Object.keys(base).sort();
+
+        sortedKeys.forEach(function(item, idx) {
+            let value = base[item] * factor;
+
+            const unitMatch = item.match(/\(([^)]+)\)/);
+            const unit = unitMatch ? unitMatch[1] : '';
+            const displayName = item.replace(/\s*\([^)]+\)/, '');
+
+            if (item.includes('count')) value = Math.round(value);
+            else if (item.includes('inch')) value = parseFloat(value.toFixed(2));
+            else if (item.toLowerCase().includes('(kg)')) value = parseFloat(value.toFixed(2));
+            else if (item.includes('(g)') || item.includes('(ml)')) value = Math.round(value);
+
+            const pipClass = pipClasses[idx % pipClasses.length];
+
+            const tr = document.createElement('tr');
+            tr.innerHTML =
+                '<td><div class="ing-cell">' +
+                    '<span class="ing-pip ' + pipClass + '"></span>' +
+                    '<span class="ing-name">' + displayName + '</span>' +
+                    '<span class="ing-unit">' + unit + '</span>' +
+                '</div></td>' +
+                '<td>' + value + '</td>';
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('countLabel').textContent = sortedKeys.length + ' ingredients';
+    }
+
+    calculate();
+</script>
+
+</body>
+</html>
